@@ -84,11 +84,8 @@ class BotAi {
                 this.blenderLegL = findBone(bModel, ['mixamorig:LeftUpLeg', 'CC_Base_L_Thigh', 'thigh.L', 'DEF-thigh.L', 'LeftUpLeg', 'Char_Leg_L']);
                 this.blenderLegR = findBone(bModel, ['mixamorig:RightUpLeg', 'CC_Base_R_Thigh', 'thigh.R', 'DEF-thigh.R', 'RightUpLeg', 'Char_Leg_R']);
 
-                if (bModel.userData && bModel.userData.animations && bModel.userData.animations.length > 0) {
-                    this.mixer = new THREE.AnimationMixer(bModel);
-                    const clip = bModel.userData.animations[0];
-                    const action = this.mixer.clipAction(clip);
-                    action.play();
+                if (window.animationSystem) {
+                    window.animationSystem.attachToCharacter(bModel, bModel.userData ? bModel.userData.animations : null);
                 }
             }
         }

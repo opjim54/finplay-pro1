@@ -89,10 +89,12 @@ class BlenderAssetLoader {
             this.loader.load(
                 path,
                 (gltf) => {
+                    const isFoliageOrRock = key.includes('tree') || key.includes('rock');
                     gltf.scene.traverse((child) => {
                         if (child.isMesh) {
-                            child.castShadow = true;
+                            child.castShadow = !isFoliageOrRock;
                             child.receiveShadow = true;
+                            child.frustumCulled = true;
                             if (child.material) {
                                 const mats = Array.isArray(child.material) ? child.material : [child.material];
                                 mats.forEach(m => {

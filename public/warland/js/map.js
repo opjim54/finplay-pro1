@@ -5,14 +5,51 @@
 class WarLandMap {
     constructor(scene) {
         this.scene = scene;
-        this.colliders = []; // AABB { min: Vector3, max: Vector3, isStairs: bool, topY: float }
+        this.colliders = []; // AABB { min: Vector3, max: Vector3, isStairs: bool, topY: float, isObstacle: bool }
         this.walkableSurfaces = []; // Y-planes { y, minX, maxX, minZ, maxZ }
+        this.walkableRamps = []; // Ramps { minX, maxX, minZ, maxZ, yStart, yEnd, dir: 1|-1, axis: 'z'|'x' }
+        this.spatialGrid = new Map(); // Spatial partition for 60fps fast collision
+        this.gridCellSize = 25;
         this.buildingConfigs = [];
         this.spawnPoints = [];
         this.blimp = null;
         this.water = null;
         this.blimpAngle = 0;
         this.waterTime = 0;
+    }
+
+    addWalkableSurface(surf) {
+        this.walkableSurfaces.push(surf);
+    }
+
+    addWalkableRamp(minX, maxX, minZ, maxZ, yStart, yEnd, dir = 1, axis = 'z') {
+        this.walkableRamps.push({
+            minX, maxX, minZ, maxZ, yStart, yEnd, dir, axis
+        });
+    }
+
+    getNearbyColliders(x, z, radius = 2.0) {
+        const minCellX = Math.floor((x - radius) / this.gridCellSize);
+        const maxCellX = Math.floor((x + radius) / this.gridCellSize);
+        const minCellZ = Math.floor((z - radius) / this.gridCellSize);
+        const maxCellZ = Math.floor((z + radius) / this.gridCellSize);
+        const nearby = [];
+        const seen = new Set();
+        for (let cx = minCellX; cx <= maxCellX; cx++) {
+            for (let cz = minCellZ; cz <= maxCellZ; cz++) {
+                const list = this.spatialGrid.get(`${cx},${cz}`);
+                if (list) {
+                    for (let i = 0; i < list.length; i++) {
+                        const c = list[i];
+                        if (!seen.has(c)) {
+                            seen.add(c);
+                            nearby.push(c);
+                        }
+                    }
+                }
+            }
+        }
+        return nearby;
     }
 
     buildMap() {
@@ -399,36 +436,33 @@ class WarLandMap {
         floor1.receiveShadow = true;
         bGroup.add(floor1);
 
-        // Walkable surface for Ground Floor
         this.walkableSurfaces.push({
             y: 0.1,
             minX: px - halfW, maxX: px + halfW,
             minZ: pz - halfD, maxZ: pz + halfD
         });
 
-        // Stone Base Plinth Around Exterior (Sits flush at ground level so doorway is 100% open)
+        // Stone Base Plinth Around Exterior
         const plinth = new THREE.Mesh(new THREE.BoxGeometry(w + 0.5, 0.2, d + 0.5), mats.brick);
         plinth.position.set(0, 0.1, 0);
         bGroup.add(plinth);
 
-        // ── FLOOR 1 EXTERIOR WALLS (With Open Doorway: 3.2m wide) ────────────
-        // Front Wall Left
+        // FLOOR 1 EXTERIOR WALLS (Doorway: 3.2m wide, X: -1.6 to +1.6)
         const fwL = new THREE.Mesh(new THREE.BoxGeometry(5.2, h1, 0.4), mats.stucco);
         fwL.position.set(-4.2, h1 / 2, halfD);
         fwL.castShadow = true; bGroup.add(fwL);
         this.addBoxCollider(new THREE.Vector3(px - 4.2, h1 / 2, pz + halfD), new THREE.Vector3(5.2, h1, 0.4), true, h1);
 
-        // Front Wall Right
         const fwR = new THREE.Mesh(new THREE.BoxGeometry(5.2, h1, 0.4), mats.stucco);
         fwR.position.set(4.2, h1 / 2, halfD);
         fwR.castShadow = true; bGroup.add(fwR);
         this.addBoxCollider(new THREE.Vector3(px + 4.2, h1 / 2, pz + halfD), new THREE.Vector3(5.2, h1, 0.4), true, h1);
 
-        // Doorway Lintel Header (Open Doorway from X = -1.6 to +1.6, Height = 2.6m)
-        const doorLintel = new THREE.Mesh(new THREE.BoxGeometry(3.6, h1 - 2.6, 0.45), mats.trim);
-        doorLintel.position.set(0, 2.6 + (h1 - 2.6) / 2, halfD);
+        // Doorway Lintel Header (above 2.7m)
+        const doorLintel = new THREE.Mesh(new THREE.BoxGeometry(3.6, h1 - 2.7, 0.45), mats.trim);
+        doorLintel.position.set(0, 2.7 + (h1 - 2.7) / 2, halfD);
         bGroup.add(doorLintel);
-        this.addBoxCollider(new THREE.Vector3(px, 2.6 + (h1 - 2.6) / 2, pz + halfD), new THREE.Vector3(3.6, h1 - 2.6, 0.45), true, h1);
+        this.addBoxCollider(new THREE.Vector3(px, 2.7 + (h1 - 2.7) / 2, pz + halfD), new THREE.Vector3(3.6, h1 - 2.7, 0.45), true, h1);
 
         // Back Wall
         const bw = new THREE.Mesh(new THREE.BoxGeometry(w, h1, 0.4), mats.stucco);
@@ -447,42 +481,57 @@ class WarLandMap {
         rw.castShadow = true; bGroup.add(rw);
         this.addBoxCollider(new THREE.Vector3(px + halfW, h1 / 2, pz), new THREE.Vector3(0.4, h1, d), true, h1);
 
-        // ── STAIRCASE TO FLOOR 2 (Steps from Y=0 to Y=3.8 along inner left wall)
-        const numSteps = 10;
-        const stepWidth = 1.8;
-        const stepDepth = 0.55;
+        // STAIRCASE 1: GROUND TO FLOOR 2 (Inner left wall, front to back)
+        const numSteps = 12;
+        const stepWidth = 2.0;
+        const stepRun = 5.0;
+        const stepDepth = stepRun / numSteps;
         const stepHeight = h1 / numSteps;
+        const stairStartX = -halfW + 0.6 + stepWidth / 2;
+        const stairStartZ = -halfD + 1.2;
+
         for (let i = 0; i < numSteps; i++) {
             const sy = (i + 0.5) * stepHeight;
-            const sz = -halfD + 1.2 + i * stepDepth;
-            const stepMesh = new THREE.Mesh(new THREE.BoxGeometry(stepWidth, stepHeight, stepDepth), mats.trim);
-            stepMesh.position.set(-halfW + 1.0 + stepWidth / 2, sy, sz);
-            stepMesh.castShadow = true;
+            const sz = stairStartZ + (i + 0.5) * stepDepth;
+            const stepMesh = new THREE.Mesh(new THREE.BoxGeometry(stepWidth, stepHeight, stepDepth + 0.04), mats.trim);
+            stepMesh.position.set(stairStartX, sy, sz);
             bGroup.add(stepMesh);
-
-            this.addBoxCollider(
-                new THREE.Vector3(px - halfW + 1.0 + stepWidth / 2, sy, pz + sz),
-                new THREE.Vector3(stepWidth, stepHeight, stepDepth),
-                true,
-                (i + 1) * stepHeight
-            );
+            this.addBoxCollider(new THREE.Vector3(px + stairStartX, sy, pz + sz), new THREE.Vector3(stepWidth, stepHeight, stepDepth), false, (i + 1) * stepHeight, true);
         }
 
-        // ── FLOOR 2 SLAB (With stairwell opening on left) ────────────────────
-        const f2Right = new THREE.Mesh(new THREE.BoxGeometry(w - 2.8, 0.25, d), mats.wood);
-        f2Right.position.set(1.4, h1, 0);
+        // Smooth elevation ramp for Staircase 1
+        this.addWalkableRamp(
+            px + stairStartX - stepWidth / 2 - 0.2,
+            px + stairStartX + stepWidth / 2 + 0.2,
+            pz + stairStartZ - 0.2,
+            pz + stairStartZ + stepRun + 0.4,
+            0.1, h1, 1, 'z'
+        );
+
+        // FLOOR 2 SLAB (Y = 3.8, leaves left stair opening clear!)
+        const f2Right = new THREE.Mesh(new THREE.BoxGeometry(w - 3.0, 0.25, d), mats.wood);
+        f2Right.position.set(1.5, h1, 0);
         f2Right.receiveShadow = true;
         bGroup.add(f2Right);
 
-        // Walkable surface for Floor 2
         this.walkableSurfaces.push({
             y: h1,
-            minX: px - halfW + 2.4, maxX: px + halfW,
+            minX: px - halfW + 2.8, maxX: px + halfW,
             minZ: pz - halfD, maxZ: pz + halfD
         });
 
-        // ── FLOOR 2 WALLS & BALCONY (Y = 3.8 to 7.6) ─────────────────────────
-        // Front Wall with Balcony Doorway & Windows
+        // Floor 2 back landing connecting top of stairs
+        const f2BackLanding = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.25, d - stepRun - 1.2), mats.wood);
+        f2BackLanding.position.set(-halfW + 1.5, h1, halfD - (d - stepRun - 1.2) / 2);
+        bGroup.add(f2BackLanding);
+
+        this.walkableSurfaces.push({
+            y: h1,
+            minX: px - halfW, maxX: px - halfW + 3.0,
+            minZ: pz + halfD - (d - stepRun - 1.2), maxZ: pz + halfD
+        });
+
+        // FLOOR 2 WALLS & BALCONY (Y = 3.8 to 7.6)
         const f2FwL = new THREE.Mesh(new THREE.BoxGeometry(5.2, h2, 0.4), mats.stucco);
         f2FwL.position.set(-4.2, h1 + h2 / 2, halfD);
         bGroup.add(f2FwL);
@@ -503,13 +552,12 @@ class WarLandMap {
             minZ: pz + halfD, maxZ: pz + halfD + 2.5
         });
 
-        // Balcony Safety Railing (0.9m high)
         const railing = new THREE.Mesh(new THREE.BoxGeometry(6.5, 0.9, 0.15), mats.trim);
         railing.position.set(0, h1 + 0.45, halfD + 2.45);
         bGroup.add(railing);
         this.addBoxCollider(new THREE.Vector3(px, h1 + 0.45, pz + halfD + 2.45), new THREE.Vector3(6.5, 0.9, 0.15), true, h1 + 0.9);
 
-        // Floor 2 Rear & Side Walls
+        // Floor 2 Perimeter Walls
         const f2Bw = new THREE.Mesh(new THREE.BoxGeometry(w, h2, 0.4), mats.stucco);
         f2Bw.position.set(0, h1 + h2 / 2, -halfD);
         bGroup.add(f2Bw);
@@ -525,54 +573,79 @@ class WarLandMap {
         bGroup.add(f2Rw);
         this.addBoxCollider(new THREE.Vector3(px + halfW, h1 + h2 / 2, pz), new THREE.Vector3(0.4, h2, d), true, totalH);
 
-        // ── STAIRS TO ROOFTOP (From Y=3.8 to Y=7.6) ──────────────────────────
+        // STAIRCASE 2: FLOOR 2 TO ROOFTOP (Along inner right wall, back to front)
+        const stair2StartX = halfW - 0.6 - stepWidth / 2;
+        const stair2StartZ = halfD - 1.2;
+
         for (let i = 0; i < numSteps; i++) {
             const sy = h1 + (i + 0.5) * stepHeight;
-            const sz = halfD - 1.2 - i * stepDepth;
-            const stepMesh = new THREE.Mesh(new THREE.BoxGeometry(stepWidth, stepHeight, stepDepth), mats.trim);
-            stepMesh.position.set(halfW - 1.0 - stepWidth / 2, sy, sz);
+            const sz = stair2StartZ - (i + 0.5) * stepDepth;
+            const stepMesh = new THREE.Mesh(new THREE.BoxGeometry(stepWidth, stepHeight, stepDepth + 0.04), mats.trim);
+            stepMesh.position.set(stair2StartX, sy, sz);
             bGroup.add(stepMesh);
-
-            this.addBoxCollider(
-                new THREE.Vector3(px + halfW - 1.0 - stepWidth / 2, sy, pz + sz),
-                new THREE.Vector3(stepWidth, stepHeight, stepDepth),
-                true,
-                h1 + (i + 1) * stepHeight
-            );
+            this.addBoxCollider(new THREE.Vector3(px + stair2StartX, sy, pz + sz), new THREE.Vector3(stepWidth, stepHeight, stepDepth), false, h1 + (i + 1) * stepHeight, true);
         }
 
-        // ── ROOFTOP SLAB & SNIPER PARAPET (Y = 7.6) ──────────────────────────
-        const roofSlab = new THREE.Mesh(new THREE.BoxGeometry(w, 0.35, d), mats.roof);
-        roofSlab.position.set(0, totalH, 0);
-        roofSlab.receiveShadow = true;
-        bGroup.add(roofSlab);
+        // Walkable ramp for Staircase 2
+        this.addWalkableRamp(
+            px + stair2StartX - stepWidth / 2 - 0.2,
+            px + stair2StartX + stepWidth / 2 + 0.2,
+            pz + stair2StartZ - stepRun - 0.4,
+            pz + stair2StartZ + 0.2,
+            h1, totalH, -1, 'z'
+        );
+
+        // ROOFTOP SLAB WITH OPEN STAIRWELL (Y = 7.6)
+        const roofLeft = new THREE.Mesh(new THREE.BoxGeometry(w - 3.0, 0.35, d), mats.roof);
+        roofLeft.position.set(-1.5, totalH, 0);
+        roofLeft.receiveShadow = true;
+        bGroup.add(roofLeft);
 
         this.walkableSurfaces.push({
             y: totalH,
-            minX: px - halfW, maxX: px + halfW,
+            minX: px - halfW, maxX: px + halfW - 2.8,
             minZ: pz - halfD, maxZ: pz + halfD
         });
 
-        // 0.9m High Parapet Walls with Sniper Slits on Rooftop
-        const parapetFront = new THREE.Mesh(new THREE.BoxGeometry(w, 0.9, 0.25), mats.brick);
-        parapetFront.position.set(0, totalH + 0.45, halfD);
+        // Front roof section forward of the stair exit:
+        const roofFrontRight = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.35, d - stepRun - 1.2), mats.roof);
+        roofFrontRight.position.set(halfW - 1.5, totalH, -halfD + (d - stepRun - 1.2) / 2);
+        bGroup.add(roofFrontRight);
+
+        this.walkableSurfaces.push({
+            y: totalH,
+            minX: px + halfW - 3.0, maxX: px + halfW,
+            minZ: pz - halfD, maxZ: pz - halfD + (d - stepRun - 1.2)
+        });
+
+        // 1.0m High Parapet Walls with Sniper Slits on Rooftop
+        const parapetFront = new THREE.Mesh(new THREE.BoxGeometry(w, 1.0, 0.25), mats.brick);
+        parapetFront.position.set(0, totalH + 0.5, halfD);
         bGroup.add(parapetFront);
-        this.addBoxCollider(new THREE.Vector3(px, totalH + 0.45, pz + halfD), new THREE.Vector3(w, 0.9, 0.25), true, totalH + 0.9);
+        this.addBoxCollider(new THREE.Vector3(px, totalH + 0.5, pz + halfD), new THREE.Vector3(w, 1.0, 0.25), true, totalH + 1.0);
 
-        const parapetBack = new THREE.Mesh(new THREE.BoxGeometry(w, 0.9, 0.25), mats.brick);
-        parapetBack.position.set(0, totalH + 0.45, -halfD);
+        const parapetBack = new THREE.Mesh(new THREE.BoxGeometry(w, 1.0, 0.25), mats.brick);
+        parapetBack.position.set(0, totalH + 0.5, -halfD);
         bGroup.add(parapetBack);
-        this.addBoxCollider(new THREE.Vector3(px, totalH + 0.45, pz - halfD), new THREE.Vector3(w, 0.9, 0.25), true, totalH + 0.9);
+        this.addBoxCollider(new THREE.Vector3(px, totalH + 0.5, pz - halfD), new THREE.Vector3(w, 1.0, 0.25), true, totalH + 1.0);
 
-        const parapetLeft = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.9, d), mats.brick);
-        parapetLeft.position.set(-halfW, totalH + 0.45, 0);
+        const parapetLeft = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.0, d), mats.brick);
+        parapetLeft.position.set(-halfW, totalH + 0.5, 0);
         bGroup.add(parapetLeft);
-        this.addBoxCollider(new THREE.Vector3(px - halfW, totalH + 0.45, pz), new THREE.Vector3(0.25, 0.9, d), true, totalH + 0.9);
+        this.addBoxCollider(new THREE.Vector3(px - halfW, totalH + 0.5, pz), new THREE.Vector3(0.25, 1.0, d), true, totalH + 1.0);
 
-        const parapetRight = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.9, d), mats.brick);
-        parapetRight.position.set(halfW, totalH + 0.45, 0);
+        const parapetRight = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.0, d), mats.brick);
+        parapetRight.position.set(halfW, totalH + 0.5, 0);
         bGroup.add(parapetRight);
-        this.addBoxCollider(new THREE.Vector3(px + halfW, totalH + 0.45, pz), new THREE.Vector3(0.25, 0.9, d), true, totalH + 0.9);
+        this.addBoxCollider(new THREE.Vector3(px + halfW, totalH + 0.5, pz), new THREE.Vector3(0.25, 1.0, d), true, totalH + 1.0);
+
+        // Tactical Rooftop Sniper Crate (High ground vantage)
+        const crateGeom = new THREE.BoxGeometry(1.2, 0.8, 1.2);
+        const crateMat = new THREE.MeshStandardMaterial({ color: 0x78350F, roughness: 0.8 });
+        const roofCrate = new THREE.Mesh(crateGeom, crateMat);
+        roofCrate.position.set(-3.5, totalH + 0.4, -2.5);
+        bGroup.add(roofCrate);
+        this.addBoxCollider(new THREE.Vector3(px - 3.5, totalH + 0.4, pz - 2.5), new THREE.Vector3(1.2, 0.8, 1.2), true, totalH + 0.8);
 
         this.scene.add(bGroup);
     }
@@ -585,28 +658,27 @@ class WarLandMap {
         const w = 10, d = 10, fH = 3.8, totalH = 11.4;
         const halfW = w / 2, halfD = d / 2;
 
-        // Concrete Base Slab
+        // Base Floor
         const baseFloor = new THREE.Mesh(new THREE.BoxGeometry(w, 0.2, d), mats.concrete);
         baseFloor.position.set(0, 0.1, 0);
         bGroup.add(baseFloor);
 
-        // Walkable surface for Ground Floor
         this.walkableSurfaces.push({
             y: 0.1,
             minX: px - halfW, maxX: px + halfW,
             minZ: pz - halfD, maxZ: pz + halfD
         });
 
-        // Floor 1 Walls with open double doorway
-        const fwL = new THREE.Mesh(new THREE.BoxGeometry(3.6, fH, 0.4), mats.brick);
-        fwL.position.set(-3.0, fH / 2, halfD);
+        // Floor 1 Walls with open double doorway (Doorway: 3.2m wide, X: -1.6 to +1.6)
+        const fwL = new THREE.Mesh(new THREE.BoxGeometry(3.4, fH, 0.4), mats.brick);
+        fwL.position.set(-3.3, fH / 2, halfD);
         bGroup.add(fwL);
-        this.addBoxCollider(new THREE.Vector3(px - 3.0, fH / 2, pz + halfD), new THREE.Vector3(3.6, fH, 0.4), true, fH);
+        this.addBoxCollider(new THREE.Vector3(px - 3.3, fH / 2, pz + halfD), new THREE.Vector3(3.4, fH, 0.4), true, fH);
 
-        const fwR = new THREE.Mesh(new THREE.BoxGeometry(3.6, fH, 0.4), mats.brick);
-        fwR.position.set(3.0, fH / 2, halfD);
+        const fwR = new THREE.Mesh(new THREE.BoxGeometry(3.4, fH, 0.4), mats.brick);
+        fwR.position.set(3.3, fH / 2, halfD);
         bGroup.add(fwR);
-        this.addBoxCollider(new THREE.Vector3(px + 3.0, fH / 2, pz + halfD), new THREE.Vector3(3.6, fH, 0.4), true, fH);
+        this.addBoxCollider(new THREE.Vector3(px + 3.3, fH / 2, pz + halfD), new THREE.Vector3(3.4, fH, 0.4), true, fH);
 
         const bw = new THREE.Mesh(new THREE.BoxGeometry(w, fH, 0.4), mats.brick);
         bw.position.set(0, fH / 2, -halfD);
@@ -623,24 +695,52 @@ class WarLandMap {
         bGroup.add(rw);
         this.addBoxCollider(new THREE.Vector3(px + halfW, fH / 2, pz), new THREE.Vector3(0.4, fH, d), true, fH);
 
-        // Stairs from Ground to Floor 2
-        for (let i = 0; i < 9; i++) {
-            const sy = (i + 0.5) * (fH / 9);
-            const sz = -halfD + 1.0 + i * 0.6;
-            const step = new THREE.Mesh(new THREE.BoxGeometry(1.6, fH / 9, 0.6), mats.trim);
-            step.position.set(-halfW + 0.8 + 0.8, sy, sz);
+        // STAIRS 1: GROUND TO FLOOR 2 (Left wall, front to back)
+        const numSteps = 10;
+        const stepW = 1.8;
+        const stepRun = 4.8;
+        const stepD = stepRun / numSteps;
+        const stepH = fH / numSteps;
+        const s1X = -halfW + 0.5 + stepW / 2;
+        const s1Z = -halfD + 1.0;
+
+        for (let i = 0; i < numSteps; i++) {
+            const sy = (i + 0.5) * stepH;
+            const sz = s1Z + (i + 0.5) * stepD;
+            const step = new THREE.Mesh(new THREE.BoxGeometry(stepW, stepH, stepD + 0.04), mats.trim);
+            step.position.set(s1X, sy, sz);
             bGroup.add(step);
-            this.addBoxCollider(new THREE.Vector3(px - halfW + 1.6, sy, pz + sz), new THREE.Vector3(1.6, fH / 9, 0.6), true, (i + 1) * (fH / 9));
+            this.addBoxCollider(new THREE.Vector3(px + s1X, sy, pz + sz), new THREE.Vector3(stepW, stepH, stepD), false, (i + 1) * stepH, true);
         }
 
-        // Floor 2 Slab at Y = 3.8
-        const f2Slab = new THREE.Mesh(new THREE.BoxGeometry(w - 2.2, 0.25, d), mats.concrete);
-        f2Slab.position.set(1.1, fH, 0);
+        this.addWalkableRamp(
+            px + s1X - stepW / 2 - 0.2,
+            px + s1X + stepW / 2 + 0.2,
+            pz + s1Z - 0.2,
+            pz + s1Z + stepRun + 0.4,
+            0.1, fH, 1, 'z'
+        );
+
+        // FLOOR 2 SLAB (Y = 3.8)
+        const f2Slab = new THREE.Mesh(new THREE.BoxGeometry(w - 2.5, 0.25, d), mats.concrete);
+        f2Slab.position.set(1.25, fH, 0);
         bGroup.add(f2Slab);
+
         this.walkableSurfaces.push({
             y: fH,
-            minX: px - halfW + 2.0, maxX: px + halfW,
+            minX: px - halfW + 2.3, maxX: px + halfW,
             minZ: pz - halfD, maxZ: pz + halfD
+        });
+
+        // Floor 2 back landing:
+        const f2BackLanding = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.25, d - stepRun - 1.0), mats.concrete);
+        f2BackLanding.position.set(-halfW + 1.25, fH, halfD - (d - stepRun - 1.0) / 2);
+        bGroup.add(f2BackLanding);
+
+        this.walkableSurfaces.push({
+            y: fH,
+            minX: px - halfW, maxX: px - halfW + 2.5,
+            minZ: pz + halfD - (d - stepRun - 1.0), maxZ: pz + halfD
         });
 
         // Floor 2 Perimeter Walls & Balcony
@@ -659,24 +759,46 @@ class WarLandMap {
         bGroup.add(f2rw);
         this.addBoxCollider(new THREE.Vector3(px + halfW, fH + fH / 2, pz), new THREE.Vector3(0.4, fH, d), true, fH * 2);
 
-        // Stairs from Floor 2 to Floor 3
-        for (let i = 0; i < 9; i++) {
-            const sy = fH + (i + 0.5) * (fH / 9);
-            const sz = halfD - 1.0 - i * 0.6;
-            const step = new THREE.Mesh(new THREE.BoxGeometry(1.6, fH / 9, 0.6), mats.trim);
-            step.position.set(halfW - 1.6, sy, sz);
+        // STAIRS 2: FLOOR 2 TO FLOOR 3 (Right wall, back to front)
+        const s2X = halfW - 0.5 - stepW / 2;
+        const s2Z = halfD - 1.0;
+
+        for (let i = 0; i < numSteps; i++) {
+            const sy = fH + (i + 0.5) * stepH;
+            const sz = s2Z - (i + 0.5) * stepD;
+            const step = new THREE.Mesh(new THREE.BoxGeometry(stepW, stepH, stepD + 0.04), mats.trim);
+            step.position.set(s2X, sy, sz);
             bGroup.add(step);
-            this.addBoxCollider(new THREE.Vector3(px + halfW - 1.6, sy, pz + sz), new THREE.Vector3(1.6, fH / 9, 0.6), true, fH + (i + 1) * (fH / 9));
+            this.addBoxCollider(new THREE.Vector3(px + s2X, sy, pz + sz), new THREE.Vector3(stepW, stepH, stepD), false, fH + (i + 1) * stepH, true);
         }
 
-        // Floor 3 Slab at Y = 7.6
-        const f3Slab = new THREE.Mesh(new THREE.BoxGeometry(w - 2.2, 0.25, d), mats.concrete);
-        f3Slab.position.set(-1.1, fH * 2, 0);
+        this.addWalkableRamp(
+            px + s2X - stepW / 2 - 0.2,
+            px + s2X + stepW / 2 + 0.2,
+            pz + s2Z - stepRun - 0.4,
+            pz + s2Z + 0.2,
+            fH, fH * 2, -1, 'z'
+        );
+
+        // FLOOR 3 SLAB (Y = 7.6)
+        const f3Slab = new THREE.Mesh(new THREE.BoxGeometry(w - 2.5, 0.25, d), mats.concrete);
+        f3Slab.position.set(-1.25, fH * 2, 0);
         bGroup.add(f3Slab);
+
         this.walkableSurfaces.push({
             y: fH * 2,
-            minX: px - halfW, maxX: px + halfW - 2.0,
+            minX: px - halfW, maxX: px + halfW - 2.3,
             minZ: pz - halfD, maxZ: pz + halfD
+        });
+
+        const f3FrontLanding = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.25, d - stepRun - 1.0), mats.concrete);
+        f3FrontLanding.position.set(halfW - 1.25, fH * 2, -halfD + (d - stepRun - 1.0) / 2);
+        bGroup.add(f3FrontLanding);
+
+        this.walkableSurfaces.push({
+            y: fH * 2,
+            minX: px + halfW - 2.5, maxX: px + halfW,
+            minZ: pz - halfD, maxZ: pz - halfD + (d - stepRun - 1.0)
         });
 
         // Floor 3 Walls
@@ -695,17 +817,46 @@ class WarLandMap {
         bGroup.add(f3rw);
         this.addBoxCollider(new THREE.Vector3(px + halfW, fH * 2 + fH / 2, pz), new THREE.Vector3(0.4, fH, d), true, totalH);
 
-        // Rooftop Slab at Y = 11.4
-        const roofSlab = new THREE.Mesh(new THREE.BoxGeometry(w, 0.35, d), mats.concrete);
-        roofSlab.position.set(0, totalH, 0);
-        bGroup.add(roofSlab);
+        // STAIRS 3: FLOOR 3 TO ROOFTOP OBSERVATION DECK (Left wall, front to back)
+        for (let i = 0; i < numSteps; i++) {
+            const sy = fH * 2 + (i + 0.5) * stepH;
+            const sz = s1Z + (i + 0.5) * stepD;
+            const step = new THREE.Mesh(new THREE.BoxGeometry(stepW, stepH, stepD + 0.04), mats.trim);
+            step.position.set(s1X, sy, sz);
+            bGroup.add(step);
+            this.addBoxCollider(new THREE.Vector3(px + s1X, sy, pz + sz), new THREE.Vector3(stepW, stepH, stepD), false, fH * 2 + (i + 1) * stepH, true);
+        }
+
+        this.addWalkableRamp(
+            px + s1X - stepW / 2 - 0.2,
+            px + s1X + stepW / 2 + 0.2,
+            pz + s1Z - 0.2,
+            pz + s1Z + stepRun + 0.4,
+            fH * 2, totalH, 1, 'z'
+        );
+
+        // ROOFTOP SLAB (Y = 11.4) WITH STAIR OPENING
+        const roofSlabRight = new THREE.Mesh(new THREE.BoxGeometry(w - 2.5, 0.35, d), mats.concrete);
+        roofSlabRight.position.set(1.25, totalH, 0);
+        bGroup.add(roofSlabRight);
+
         this.walkableSurfaces.push({
             y: totalH,
-            minX: px - halfW, maxX: px + halfW,
+            minX: px - halfW + 2.3, maxX: px + halfW,
             minZ: pz - halfD, maxZ: pz + halfD
         });
 
-        // Rooftop Sniper Parapet (1.0m high)
+        const roofBackLanding = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.35, d - stepRun - 1.0), mats.concrete);
+        roofBackLanding.position.set(-halfW + 1.25, totalH, halfD - (d - stepRun - 1.0) / 2);
+        bGroup.add(roofBackLanding);
+
+        this.walkableSurfaces.push({
+            y: totalH,
+            minX: px - halfW, maxX: px - halfW + 2.5,
+            minZ: pz + halfD - (d - stepRun - 1.0), maxZ: pz + halfD
+        });
+
+        // Rooftop Sniper Parapet (1.0m high) on all 4 edges
         const pFront = new THREE.Mesh(new THREE.BoxGeometry(w, 1.0, 0.3), mats.brick);
         pFront.position.set(0, totalH + 0.5, halfD);
         bGroup.add(pFront);
@@ -715,6 +866,22 @@ class WarLandMap {
         pBack.position.set(0, totalH + 0.5, -halfD);
         bGroup.add(pBack);
         this.addBoxCollider(new THREE.Vector3(px, totalH + 0.5, pz - halfD), new THREE.Vector3(w, 1.0, 0.3), true, totalH + 1.0);
+
+        const pLeft = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.0, d), mats.brick);
+        pLeft.position.set(-halfW, totalH + 0.5, 0);
+        bGroup.add(pLeft);
+        this.addBoxCollider(new THREE.Vector3(px - halfW, totalH + 0.5, pz), new THREE.Vector3(0.3, 1.0, d), true, totalH + 1.0);
+
+        const pRight = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.0, d), mats.brick);
+        pRight.position.set(halfW, totalH + 0.5, 0);
+        bGroup.add(pRight);
+        this.addBoxCollider(new THREE.Vector3(px + halfW, totalH + 0.5, pz), new THREE.Vector3(0.3, 1.0, d), true, totalH + 1.0);
+
+        // Tactical Sniper Deck Box on Roof
+        const deckCrate = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.8, 1.4), mats.concrete);
+        deckCrate.position.set(2.0, totalH + 0.4, 2.0);
+        bGroup.add(deckCrate);
+        this.addBoxCollider(new THREE.Vector3(px + 2.0, totalH + 0.4, pz + 2.0), new THREE.Vector3(1.4, 0.8, 1.4), true, totalH + 0.8);
 
         this.scene.add(bGroup);
     }
@@ -732,7 +899,6 @@ class WarLandMap {
         floor.position.set(0, 0.1, 0);
         bGroup.add(floor);
 
-        // Walkable surface for Barracks Ground Floor
         this.walkableSurfaces.push({
             y: 0.1,
             minX: px - halfW, maxX: px + halfW,
@@ -772,21 +938,56 @@ class WarLandMap {
         bGroup.add(rw);
         this.addBoxCollider(new THREE.Vector3(px + halfW, h / 2, pz), new THREE.Vector3(0.35, h, d), true, h);
 
-        // Pitched Corrugated Metal Roof
-        const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 1.2, 0.3, d + 1.0), mats.roof);
-        roof.position.set(0, h + 0.15, 0);
-        bGroup.add(roof);
+        // Exterior Steel Stairs to Roof (Along right end wall)
+        const bStepNum = 12;
+        const bStepW = 1.6;
+        const bStepRun = 5.0;
+        const bStepD = bStepRun / bStepNum;
+        const bStepH = h / bStepNum;
+        const bStairX = halfW + 0.2 + bStepW / 2;
+        const bStairZ = -halfD + 1.2;
+
+        for (let i = 0; i < bStepNum; i++) {
+            const sy = (i + 0.5) * bStepH;
+            const sz = bStairZ + (i + 0.5) * bStepD;
+            const step = new THREE.Mesh(new THREE.BoxGeometry(bStepW, bStepH, bStepD + 0.04), mats.trim);
+            step.position.set(bStairX, sy, sz);
+            bGroup.add(step);
+            this.addBoxCollider(new THREE.Vector3(px + bStairX, sy, pz + sz), new THREE.Vector3(bStepW, bStepH, bStepD), false, (i + 1) * bStepH, true);
+        }
+
+        this.addWalkableRamp(
+            px + bStairX - bStepW / 2 - 0.2,
+            px + bStairX + bStepW / 2 + 0.2,
+            pz + bStairZ - 0.2,
+            pz + bStairZ + bStepRun + 0.4,
+            0.1, h, 1, 'z'
+        );
+
+        // Walkable Flat Barracks Roof (Y = 4.2)
+        const roofSlab = new THREE.Mesh(new THREE.BoxGeometry(w, 0.35, d), mats.concrete);
+        roofSlab.position.set(0, h, 0);
+        bGroup.add(roofSlab);
 
         this.walkableSurfaces.push({
-            y: h + 0.3,
-            minX: px - halfW - 0.5, maxX: px + halfW + 0.5,
-            minZ: pz - halfD - 0.5, maxZ: pz + halfD + 0.5
+            y: h,
+            minX: px - halfW, maxX: px + halfW + bStepW + 0.4,
+            minZ: pz - halfD, maxZ: pz + halfD
         });
+
+        // Parapet around roof
+        const bParapetF = new THREE.Mesh(new THREE.BoxGeometry(w, 0.9, 0.25), mats.brick);
+        bParapetF.position.set(0, h + 0.45, halfD);
+        bGroup.add(bParapetF);
+        this.addBoxCollider(new THREE.Vector3(px, h + 0.45, pz + halfD), new THREE.Vector3(w, 0.9, 0.25), true, h + 0.9);
+
+        const bParapetB = new THREE.Mesh(new THREE.BoxGeometry(w, 0.9, 0.25), mats.brick);
+        bParapetB.position.set(0, h + 0.45, -halfD);
+        bGroup.add(bParapetB);
+        this.addBoxCollider(new THREE.Vector3(px, h + 0.45, pz - halfD), new THREE.Vector3(w, 0.9, 0.25), true, h + 0.9);
 
         this.scene.add(bGroup);
     }
-
-    // ── 4. ENTERABLE INDUSTRIAL VEHICLE HANGAR ────────────────────────────────
     buildEnterableHangar(px, pz, mats) {
         const bGroup = new THREE.Group();
         bGroup.position.set(px, 0, pz);
@@ -932,15 +1133,25 @@ class WarLandMap {
                 const bTower = window.blenderAssetLoader.createWatchtowerInstance(loc.x, loc.z);
                 if (bTower) this.scene.add(bTower);
             }
-            this.addBoxCollider(new THREE.Vector3(loc.x, 6.2, loc.z), new THREE.Vector3(4.5, 12.4, 4.5), true, 12.4);
+
+            // 4 Corner Post colliders (leaves center open to walk through)
+            const postDist = 1.8;
+            this.addBoxCollider(new THREE.Vector3(loc.x - postDist, 6.0, loc.z - postDist), new THREE.Vector3(0.5, 12.0, 0.5), true, 12.0);
+            this.addBoxCollider(new THREE.Vector3(loc.x + postDist, 6.0, loc.z - postDist), new THREE.Vector3(0.5, 12.0, 0.5), true, 12.0);
+            this.addBoxCollider(new THREE.Vector3(loc.x - postDist, 6.0, loc.z + postDist), new THREE.Vector3(0.5, 12.0, 0.5), true, 12.0);
+            this.addBoxCollider(new THREE.Vector3(loc.x + postDist, 6.0, loc.z + postDist), new THREE.Vector3(0.5, 12.0, 0.5), true, 12.0);
+
+            // Access ramp / stairs to top platform:
+            this.addWalkableRamp(loc.x - 1.0, loc.x + 1.0, loc.z - 6.5, loc.z - 1.2, 0.1, 12.0, 1, 'z');
+
+            // Top observation platform at Y = 12.0
             this.walkableSurfaces.push({
-                y: 12.4,
-                minX: loc.x - 2.2, maxX: loc.x + 2.2,
-                minZ: loc.z - 2.2, maxZ: loc.z + 2.2
+                y: 12.0,
+                minX: loc.x - 2.5, maxX: loc.x + 2.5,
+                minZ: loc.z - 2.5, maxZ: loc.z + 2.5
             });
         });
     }
-
     createFoliageAndProps() {
         if (!window.blenderAssetLoader) return;
 
@@ -1159,13 +1370,28 @@ class WarLandMap {
         }
     }
 
-    addBoxCollider(pos, size, isObstacle = true, topY = 0) {
-        this.colliders.push({
+    addBoxCollider(pos, size, isObstacle = true, topY = 0, isStairs = false) {
+        const col = {
             min: new THREE.Vector3(pos.x - size.x / 2, pos.y - size.y / 2, pos.z - size.z / 2),
             max: new THREE.Vector3(pos.x + size.x / 2, pos.y + size.y / 2, pos.z + size.z / 2),
             isObstacle: isObstacle,
-            topY: topY || (pos.y + size.y / 2)
-        });
+            topY: topY || (pos.y + size.y / 2),
+            isStairs: isStairs
+        };
+        this.colliders.push(col);
+
+        // Register into Spatial Hash Grid
+        const minCellX = Math.floor(col.min.x / this.gridCellSize);
+        const maxCellX = Math.floor(col.max.x / this.gridCellSize);
+        const minCellZ = Math.floor(col.min.z / this.gridCellSize);
+        const maxCellZ = Math.floor(col.max.z / this.gridCellSize);
+        for (let cx = minCellX; cx <= maxCellX; cx++) {
+            for (let cz = minCellZ; cz <= maxCellZ; cz++) {
+                const key = `${cx},${cz}`;
+                if (!this.spatialGrid.has(key)) this.spatialGrid.set(key, []);
+                this.spatialGrid.get(key).push(col);
+            }
+        }
     }
 
     resolveCollision(currentPos, nextPos, radius = 0.45, height = 1.8) {
@@ -1173,28 +1399,56 @@ class WarLandMap {
         let groundY = 0.0;
         let ceilingY = 999.0;
 
-        // Check Walkable Surfaces (Floor 1, Floor 2, Floor 3, Rooftops, Bridges, Watchtowers)
-        for (const surf of this.walkableSurfaces) {
+        // 1. Walkable Flat Surfaces (Ground, Floor 1, Floor 2, Floor 3, Rooftops, Bridges, Watchtowers)
+        for (let i = 0; i < this.walkableSurfaces.length; i++) {
+            const surf = this.walkableSurfaces[i];
             if (finalPos.x >= surf.minX && finalPos.x <= surf.maxX &&
                 finalPos.z >= surf.minZ && finalPos.z <= surf.maxZ) {
-                if (currentPos.y >= surf.y - 0.45 && currentPos.y <= surf.y + 3.8) {
+                if (currentPos.y >= surf.y - 0.75 && currentPos.y <= surf.y + 4.2) {
                     groundY = Math.max(groundY, surf.y);
                 }
             }
         }
 
-        // Check Obstacle Colliders (Walls, Stairs, Roofs)
-        for (const col of this.colliders) {
-            // Check Ceiling Collision directly overhead
+        // 2. Walkable Stair Ramps (Continuous smooth incline for effortless stair climbing)
+        for (let i = 0; i < this.walkableRamps.length; i++) {
+            const ramp = this.walkableRamps[i];
+            if (finalPos.x >= ramp.minX && finalPos.x <= ramp.maxX &&
+                finalPos.z >= ramp.minZ && finalPos.z <= ramp.maxZ) {
+                let t = 0;
+                if (ramp.axis === 'x') {
+                    const span = ramp.maxX - ramp.minX;
+                    t = span > 0.001 ? (finalPos.x - ramp.minX) / span : 0;
+                } else {
+                    const span = ramp.maxZ - ramp.minZ;
+                    t = span > 0.001 ? (finalPos.z - ramp.minZ) / span : 0;
+                }
+                t = Math.max(0, Math.min(1, t));
+                const rampY = (ramp.dir > 0) ? (ramp.yStart + t * (ramp.yEnd - ramp.yStart)) : (ramp.yEnd - t * (ramp.yEnd - ramp.yStart));
+                if (currentPos.y >= rampY - 0.85 && currentPos.y <= rampY + 3.0) {
+                    groundY = Math.max(groundY, rampY);
+                }
+            }
+        }
+
+        // 3. Fast Spatial Grid Colliders (Only checking nearby cells for 60fps buttery smoothness!)
+        const collidersToCheck = this.getNearbyColliders(finalPos.x, finalPos.z, radius + 0.8);
+        for (let i = 0; i < collidersToCheck.length; i++) {
+            const col = collidersToCheck[i];
+
+            // Ceiling collision directly overhead
             if (finalPos.x >= col.min.x && finalPos.x <= col.max.x &&
                 finalPos.z >= col.min.z && finalPos.z <= col.max.z) {
-                if (col.min.y > currentPos.y + 0.5 && col.min.y <= currentPos.y + height + 0.3) {
+                if (col.min.y > currentPos.y + 0.6 && col.min.y <= currentPos.y + height + 0.3) {
                     ceilingY = Math.min(ceilingY, col.min.y);
                 }
             }
 
-            // Step onto stairs or top of obstacle if walking onto it
-            if (currentPos.y >= col.topY - 0.55) {
+            // If stairs, ramp elevation handled groundY; do not block horizontally!
+            if (col.isStairs) continue;
+
+            // Step-up / curb auto climbing (if obstacle top is within 0.45m stepOffset)
+            if (col.topY && col.topY <= currentPos.y + 0.45 && currentPos.y >= col.topY - 0.55) {
                 if (finalPos.x >= col.min.x && finalPos.x <= col.max.x &&
                     finalPos.z >= col.min.z && finalPos.z <= col.max.z) {
                     groundY = Math.max(groundY, col.topY);
@@ -1202,12 +1456,12 @@ class WarLandMap {
                 continue;
             }
 
-            // Vertical clearance checks:
-            // 1. If obstacle is completely above player's head (doorway lintel, ceiling, arch), player walks freely underneath!
+            // Headroom clearance (doorway lintels, arches, high roofs)
             if (col.min.y >= currentPos.y + height - 0.15) {
                 continue;
             }
-            // 2. If obstacle is completely below player's feet, ignore horizontal blocking
+
+            // Below feet clearance
             if (col.max.y <= currentPos.y + 0.08) {
                 continue;
             }
@@ -1235,7 +1489,6 @@ class WarLandMap {
 
         return { position: finalPos, groundY: groundY, ceilingY: ceilingY };
     }
-
     generateSpawnPoints() {
         for (let i = 0; i < 40; i++) {
             const angle = (i / 40) * Math.PI * 2;

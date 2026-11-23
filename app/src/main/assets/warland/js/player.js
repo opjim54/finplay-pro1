@@ -130,13 +130,8 @@ class PlayerController {
                     }
                 });
 
-                if (bModel.userData && bModel.userData.animations && bModel.userData.animations.length > 0) {
-                    const clip = bModel.userData.animations[0];
-                    if (clip && clip.duration > 0.25) {
-                        this.mixer = new THREE.AnimationMixer(bModel);
-                        const action = this.mixer.clipAction(clip);
-                        action.play();
-                    }
+                if (window.animationSystem) {
+                    window.animationSystem.attachToCharacter(bModel, bModel.userData ? bModel.userData.animations : null);
                 }
             }
         }
@@ -285,13 +280,8 @@ class PlayerController {
                     }
                 });
 
-                if (bModel.userData && bModel.userData.animations && bModel.userData.animations.length > 0) {
-                    const clip = bModel.userData.animations[0];
-                    if (clip && clip.duration > 0.25) {
-                        this.mixer = new THREE.AnimationMixer(bModel);
-                        const action = this.mixer.clipAction(clip);
-                        action.play();
-                    }
+                if (window.animationSystem) {
+                    window.animationSystem.attachToCharacter(bModel, bModel.userData ? bModel.userData.animations : null);
                 }
             }
         }
@@ -1306,9 +1296,9 @@ class PlayerController {
         if (window.gameEngine && window.gameEngine.botManager && window.hud) {
             let targetLocked = false;
             const camForward = new THREE.Vector3(
-                Math.sin(this.rotationY),
+                -Math.sin(this.rotationY),
                 Math.tan(-this.pitch),
-                Math.cos(this.rotationY)
+                -Math.cos(this.rotationY)
             ).normalize();
 
             const origin = this.camera.position;

@@ -77,7 +77,7 @@ class GameEngine {
             powerPreference: 'high-performance'
         });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -92,8 +92,8 @@ class GameEngine {
         sunLight.position.set(80, 120, 60);
         sunLight.castShadow = true;
         this.sunLight = sunLight;
-        sunLight.shadow.mapSize.width = 2048;
-        sunLight.shadow.mapSize.height = 2048;
+        sunLight.shadow.mapSize.width = 1024;
+        sunLight.shadow.mapSize.height = 1024;
         sunLight.shadow.camera.near = 10;
         sunLight.shadow.camera.far = 300;
         sunLight.shadow.bias = -0.0005;
@@ -455,9 +455,9 @@ class GameEngine {
         origin.y += this.player.cameraHeightOffset;
 
         const forward = new THREE.Vector3(
-            Math.sin(this.player.rotationY),
+            -Math.sin(this.player.rotationY),
             Math.tan(-this.player.pitch),
-            Math.cos(this.player.rotationY)
+            -Math.cos(this.player.rotationY)
         ).normalize();
 
         // Apply weapon spread jitter
