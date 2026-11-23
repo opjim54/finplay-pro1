@@ -1,0 +1,6 @@
+{
+  "name": "FinPlay Pro",
+  "description": "FinPlay Pro — All-in-one Multi-Profile Smart Finance, Notes & Tasks, AI Chat, Smart Tools, and Play & Earn Dual-Wallet Arena with Online Multiplayer, Tournament Cashback, Armory Shop, and Manual Deposit/Withdrawal.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

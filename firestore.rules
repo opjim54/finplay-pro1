@@ -1,0 +1,682 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model (FinPlay Pro)
+    // ===============================================================
+    // 1. /users/{userId}/backups/{backupId}
+    // 2. /users/{userId}/wallet/{walletDocId}
+    // 3. /users/{userId}/wallet_ledger/{entryId}
+    // 4. /wallet_requests/{requestId}
+    // 5. /multiplayer_rooms/{roomId}
+    // 6. /broadcasts/{broadcastId}
+    // ===============================================================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (request.auth.token.email == 'abulha1975shem1975@gmail.com' &&
+         request.auth.token.email_verified == true)
+      );
+    }
+
+    function isValidEmail(email) {
+      return email is string &&
+        email.size() >= 3 &&
+        email.size() <= 254 &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // ---- 1. Cloud Backup Vault (preserved intact) ----
+    function isValidCloudBackup(data, userId) {
+      return data.keys().hasAll([
+          'userId',
+          'email',
+          'payloadJson',
+          'exportedAt',
+          'accountCount',
+          'transactionCount',
+          'schemaVersion',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId',
+          'email',
+          'payloadJson',
+          'exportedAt',
+          'accountCount',
+          'transactionCount',
+          'schemaVersion',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.userId is string &&
+        data.userId == userId &&
+        data.userId.size() >= 1 &&
+        data.userId.size() <= 128 &&
+        isValidEmail(data.email) &&
+        data.payloadJson is string &&
+        data.payloadJson.size() >= 2 &&
+        data.payloadJson.size() <= 950000 &&
+        data.exportedAt is int &&
+        data.exportedAt >= 0 &&
+        data.accountCount is int &&
+        data.accountCount >= 0 &&
+        data.accountCount <= 10000 &&
+        data.transactionCount is int &&
+        data.transactionCount >= 0 &&
+        data.transactionCount <= 500000 &&
+        data.schemaVersion is int &&
+        data.schemaVersion >= 1 &&
+        data.schemaVersion <= 100 &&
+        data.createdAt is timestamp &&
+        data.createdAt <= request.time &&
+        data.updatedAt is timestamp &&
+        data.updatedAt <= request.time;
+    }
+
+    match /users/{userId}/backups/{backupId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) &&
+        backupId.size() >= 1 &&
+        backupId.size() <= 64 &&
+        isValidCloudBackup(request.resource.data, userId);
+      allow update: if isOwner(userId) &&
+        backupId.size() >= 1 &&
+        backupId.size() <= 64 &&
+        isValidCloudBackup(request.resource.data, userId) &&
+        request.resource.data.userId == resource.data.userId &&
+        request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isOwner(userId);
+    }
+
+    // ---- 2. Dual Wallet Cloud Summary ----
+    function isValidDualWallet(data, userId) {
+      return data.keys().hasAll([
+          'userId',
+          'tournamentBalance',
+          'gameBalance',
+          'equippedBoardSkinId',
+          'equippedAvatarId',
+          'ownedItemsCsv',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId',
+          'tournamentBalance',
+          'winningBalance',
+          'gameBalance',
+          'equippedBoardSkinId',
+          'equippedAvatarId',
+          'ownedItemsCsv',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.userId is string &&
+        data.userId == userId &&
+        data.userId.size() >= 1 &&
+        data.userId.size() <= 128 &&
+        data.tournamentBalance is number &&
+        data.tournamentBalance >= 0 &&
+        data.tournamentBalance <= 10000000 &&
+        (!('winningBalance' in data) || (
+          data.winningBalance is number &&
+          data.winningBalance >= 0 &&
+          data.winningBalance <= 10000000
+        )) &&
+        data.gameBalance is number &&
+        data.gameBalance >= 0 &&
+        data.gameBalance <= 10000000 &&
+        data.equippedBoardSkinId is string &&
+        data.equippedBoardSkinId.size() >= 1 &&
+        data.equippedBoardSkinId.size() <= 64 &&
+        data.equippedAvatarId is string &&
+        data.equippedAvatarId.size() >= 1 &&
+        data.equippedAvatarId.size() <= 64 &&
+        data.ownedItemsCsv is string &&
+        data.ownedItemsCsv.size() <= 1000 &&
+        data.createdAt is timestamp &&
+        data.createdAt <= request.time &&
+        data.updatedAt is timestamp &&
+        data.updatedAt <= request.time;
+    }
+
+    match /users/{userId}/wallet/{walletDocId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) &&
+        walletDocId.size() >= 1 &&
+        walletDocId.size() <= 64 &&
+        isValidDualWallet(request.resource.data, userId);
+      allow update: if (isOwner(userId) || isAdmin()) &&
+        walletDocId.size() >= 1 &&
+        walletDocId.size() <= 64 &&
+        isValidDualWallet(request.resource.data, userId) &&
+        request.resource.data.userId == resource.data.userId &&
+        request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isAdmin();
+    }
+
+    // ---- 2b. Real-Time Wallet Transaction Ledger ----
+    function isValidWalletLedger(data, userId) {
+      return data.keys().hasAll([
+          'userId',
+          'walletBucket',
+          'kind',
+          'amountDelta',
+          'note',
+          'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId',
+          'walletBucket',
+          'kind',
+          'amountDelta',
+          'note',
+          'createdAt'
+        ]) &&
+        data.userId is string &&
+        data.userId == userId &&
+        data.userId.size() >= 1 &&
+        data.userId.size() <= 128 &&
+        data.walletBucket in ['TOURNAMENT', 'WINNING', 'GAME'] &&
+        data.kind is string &&
+        data.kind.size() >= 1 &&
+        data.kind.size() <= 48 &&
+        data.amountDelta is number &&
+        data.amountDelta >= -10000000 &&
+        data.amountDelta <= 10000000 &&
+        data.note is string &&
+        data.note.size() <= 240 &&
+        data.createdAt is timestamp &&
+        data.createdAt <= request.time;
+    }
+
+    match /users/{userId}/wallet_ledger/{entryId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if (isOwner(userId) || isAdmin()) &&
+        entryId.size() >= 1 &&
+        entryId.size() <= 128 &&
+        isValidWalletLedger(request.resource.data, userId);
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    // ---- 3. Manual Deposit & Withdrawal Requests ----
+    function isValidWalletRequest(data) {
+      return data.keys().hasAll([
+          'userId',
+          'requestType',
+          'channel',
+          'amount',
+          'accountNumber',
+          'transactionId',
+          'status',
+          'adminNote',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId',
+          'requestType',
+          'channel',
+          'amount',
+          'accountNumber',
+          'transactionId',
+          'status',
+          'adminNote',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.userId is string &&
+        data.userId.size() >= 1 &&
+        data.userId.size() <= 128 &&
+        data.requestType in ['DEPOSIT', 'WITHDRAW'] &&
+        data.channel in ['BKASH', 'NAGAD', 'ROCKET', 'BINANCE'] &&
+        data.amount is number &&
+        data.amount > 0 &&
+        data.amount <= 1000000 &&
+        data.accountNumber is string &&
+        data.accountNumber.size() >= 4 &&
+        data.accountNumber.size() <= 64 &&
+        data.transactionId is string &&
+        data.transactionId.size() <= 64 &&
+        data.status in ['PENDING', 'APPROVED', 'PAID', 'REJECTED'] &&
+        data.adminNote is string &&
+        data.adminNote.size() <= 240 &&
+        data.createdAt is timestamp &&
+        data.createdAt <= request.time &&
+        data.updatedAt is timestamp &&
+        data.updatedAt <= request.time;
+    }
+
+    match /wallet_requests/{requestId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() &&
+        requestId.size() >= 1 &&
+        requestId.size() <= 128 &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.status == 'PENDING' &&
+        request.resource.data.adminNote == '' &&
+        isValidWalletRequest(request.resource.data);
+      allow update: if isAdmin() &&
+        isValidWalletRequest(request.resource.data) &&
+        request.resource.data.userId == resource.data.userId &&
+        request.resource.data.requestType == resource.data.requestType &&
+        request.resource.data.channel == resource.data.channel &&
+        request.resource.data.amount == resource.data.amount &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'adminNote', 'updatedAt']);
+      allow delete: if isAdmin();
+    }
+
+    // ---- 4. Real-Time Online Multiplayer Rooms ----
+    function isValidMultiplayerRoom(data, roomId) {
+      return data.keys().hasAll([
+          'roomCode',
+          'gameType',
+          'hostUid',
+          'hostName',
+          'guestUid',
+          'guestName',
+          'memberUids',
+          'publicRoom',
+          'entryFee',
+          'status',
+          'turnUid',
+          'winnerUid',
+          'statePayload',
+          'moveCount',
+          'lastMoveSummary',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'roomCode',
+          'gameType',
+          'hostUid',
+          'hostName',
+          'guestUid',
+          'guestName',
+          'memberUids',
+          'publicRoom',
+          'entryFee',
+          'status',
+          'turnUid',
+          'winnerUid',
+          'statePayload',
+          'moveCount',
+          'lastMoveSummary',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.roomCode is string &&
+        data.roomCode == roomId &&
+        data.roomCode.size() == 6 &&
+        data.gameType in ['LUDO', 'CHESS', 'AETHER_CROWN', 'REVERSI', 'CONNECT_FOUR', 'CARROM', 'SNAKES_LADDERS', 'FRUIT_SLASH'] &&
+        data.hostUid is string &&
+        data.hostUid.size() >= 1 &&
+        data.hostUid.size() <= 128 &&
+        data.hostName is string &&
+        data.hostName.size() >= 1 &&
+        data.hostName.size() <= 80 &&
+        data.guestUid is string &&
+        data.guestUid.size() <= 128 &&
+        data.guestName is string &&
+        data.guestName.size() <= 80 &&
+        data.memberUids is list &&
+        data.memberUids.size() >= 1 &&
+        data.memberUids.size() <= 2 &&
+        data.publicRoom is bool &&
+        data.entryFee is number &&
+        data.entryFee >= 0 &&
+        data.entryFee <= 100000 &&
+        data.status in ['WAITING', 'PLAYING', 'FINISHED', 'CANCELLED'] &&
+        data.turnUid is string &&
+        data.turnUid.size() >= 1 &&
+        data.turnUid.size() <= 128 &&
+        data.winnerUid is string &&
+        data.winnerUid.size() <= 128 &&
+        data.statePayload is string &&
+        data.statePayload.size() >= 2 &&
+        data.statePayload.size() <= 20000 &&
+        data.moveCount is int &&
+        data.moveCount >= 0 &&
+        data.moveCount <= 10000 &&
+        data.lastMoveSummary is string &&
+        data.lastMoveSummary.size() <= 200 &&
+        data.createdAt is timestamp &&
+        data.createdAt <= request.time &&
+        data.updatedAt is timestamp &&
+        data.updatedAt <= request.time;
+    }
+
+    function isImmutableRoomFieldsUnchanged() {
+      return request.resource.data.roomCode == resource.data.roomCode &&
+        request.resource.data.gameType == resource.data.gameType &&
+        request.resource.data.hostUid == resource.data.hostUid &&
+        request.resource.data.hostName == resource.data.hostName &&
+        request.resource.data.publicRoom == resource.data.publicRoom &&
+        request.resource.data.entryFee == resource.data.entryFee &&
+        request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    function isJoiningWaitingRoom() {
+      return resource.data.status == 'WAITING' &&
+        resource.data.guestUid == '' &&
+        request.auth.uid != resource.data.hostUid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'guestUid', 'guestName', 'memberUids', 'status', 'updatedAt'
+        ]) &&
+        request.resource.data.guestUid == request.auth.uid &&
+        request.resource.data.guestName.size() >= 1 &&
+        request.resource.data.status == 'PLAYING' &&
+        request.resource.data.memberUids.size() == 2 &&
+        request.resource.data.memberUids[0] == resource.data.hostUid &&
+        request.resource.data.memberUids[1] == request.auth.uid;
+    }
+
+    function isSubmittingTurnMove() {
+      return resource.data.status == 'PLAYING' &&
+        request.auth.uid in resource.data.memberUids &&
+        resource.data.turnUid == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'statePayload', 'turnUid', 'moveCount', 'lastMoveSummary', 'status', 'winnerUid', 'updatedAt'
+        ]) &&
+        request.resource.data.moveCount == resource.data.moveCount + 1 &&
+        request.resource.data.status in ['PLAYING', 'FINISHED'] &&
+        request.resource.data.turnUid in resource.data.memberUids &&
+        (request.resource.data.winnerUid == '' ||
+         request.resource.data.winnerUid == 'DRAW' ||
+         request.resource.data.winnerUid in resource.data.memberUids);
+    }
+
+    function isCancellingOrForfeitingRoom() {
+      return request.auth.uid in resource.data.memberUids &&
+        resource.data.status in ['WAITING', 'PLAYING'] &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'winnerUid', 'lastMoveSummary', 'updatedAt'
+        ]) &&
+        (
+          (resource.data.status == 'WAITING' &&
+           request.auth.uid == resource.data.hostUid &&
+           request.resource.data.status == 'CANCELLED' &&
+           request.resource.data.winnerUid == '') ||
+          (resource.data.status == 'PLAYING' &&
+           request.resource.data.status == 'FINISHED' &&
+           request.resource.data.winnerUid in resource.data.memberUids &&
+           request.resource.data.winnerUid != request.auth.uid)
+        );
+    }
+
+    match /multiplayer_rooms/{roomId} {
+      allow get: if isSignedIn() && (
+        request.auth.uid in resource.data.memberUids ||
+        (resource.data.status == 'WAITING' && resource.data.guestUid == '')
+      );
+      allow list: if isSignedIn() && (
+        request.auth.uid in resource.data.memberUids ||
+        (resource.data.status == 'WAITING' && resource.data.publicRoom == true)
+      );
+      allow create: if isSignedIn() &&
+        request.resource.data.hostUid == request.auth.uid &&
+        request.resource.data.guestUid == '' &&
+        request.resource.data.guestName == '' &&
+        request.resource.data.status == 'WAITING' &&
+        request.resource.data.memberUids.size() == 1 &&
+        request.resource.data.memberUids[0] == request.auth.uid &&
+        request.resource.data.turnUid == request.auth.uid &&
+        request.resource.data.winnerUid == '' &&
+        request.resource.data.moveCount == 0 &&
+        isValidMultiplayerRoom(request.resource.data, roomId);
+      allow update: if isSignedIn() &&
+        !(resource.data.status in ['FINISHED', 'CANCELLED']) &&
+        isValidMultiplayerRoom(request.resource.data, roomId) &&
+        isImmutableRoomFieldsUnchanged() &&
+        (isJoiningWaitingRoom() || isSubmittingTurnMove() || isCancellingOrForfeitingRoom());
+      allow delete: if isAdmin() || (
+        isSignedIn() &&
+        resource.data.hostUid == request.auth.uid &&
+        resource.data.status in ['WAITING', 'CANCELLED', 'FINISHED']
+      );
+    }
+
+    // ---- 5. Real-Time Admin Broadcasts & Pre-Match Room Alerts ----
+    function isValidBroadcast(data) {
+      return data.keys().hasAll([
+          'title',
+          'message',
+          'priority',
+          'senderEmail',
+          'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'title',
+          'message',
+          'priority',
+          'senderEmail',
+          'createdAt'
+        ]) &&
+        data.title is string &&
+        data.title.size() >= 1 &&
+        data.title.size() <= 120 &&
+        data.message is string &&
+        data.message.size() >= 1 &&
+        data.message.size() <= 1000 &&
+        data.priority in ['INFO', 'TOURNAMENT', 'PROMO', 'URGENT'] &&
+        data.senderEmail is string &&
+        data.senderEmail.size() <= 254 &&
+        data.createdAt is timestamp &&
+        data.createdAt <= request.time;
+    }
+
+    match /broadcasts/{broadcastId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() &&
+        broadcastId.size() >= 1 &&
+        broadcastId.size() <= 128 &&
+        isValidBroadcast(request.resource.data);
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    // ---- 6. Centralized Real-Time Tournament Hub & Live Roster ----
+    function isValidDocId(id) {
+      return id is string &&
+        id.size() >= 1 &&
+        id.size() <= 128 &&
+        id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidTournament(data) {
+      return data.keys().hasAll([
+          'title',
+          'gameType',
+          'entryFee',
+          'prizePool',
+          'playerUids',
+          'startTime',
+          'maxSlots',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'title',
+          'gameType',
+          'entryFee',
+          'prizePool',
+          'playerUids',
+          'startTime',
+          'maxSlots',
+          'status',
+          'gameCategory',
+          'modeLabel',
+          'mapName',
+          'bannerKey',
+          'perKillReward',
+          'prizeRanksJson',
+          'joinedCount',
+          'startTimeLabel',
+          'matchStartTimeMillis',
+          'preMatchAlertMinutes',
+          'roomAlertSent',
+          'versionLabel',
+          'rulesNotice',
+          'adminCommissionPercent',
+          'roomIdCode',
+          'roomPassword',
+          'winnerName',
+          'localRoomId',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.title is string &&
+        data.title.size() >= 1 &&
+        data.title.size() <= 120 &&
+        data.gameType in [
+          'FREE_FIRE', 'LUDO', 'CHESS', 'AETHER_CROWN', 'REVERSI', 'CONNECT_FOUR', 'PUBG', 'EFOOTBALL', 'ESPORTS', 'CARROM', 'SNAKES_LADDERS', 'FRUIT_SLASH'
+        ] &&
+        data.entryFee is number &&
+        data.entryFee >= 0 &&
+        data.entryFee <= 100000 &&
+        data.prizePool is number &&
+        data.prizePool >= 0 &&
+        data.prizePool <= 10000000 &&
+        data.maxSlots is int &&
+        data.maxSlots >= 2 &&
+        data.maxSlots <= 500 &&
+        data.playerUids is list &&
+        data.playerUids.size() <= data.maxSlots &&
+        data.playerUids.size() <= 500 &&
+        data.startTime is timestamp &&
+        data.status in ['UPCOMING', 'LIVE', 'COMPLETED'] &&
+        (!('gameCategory' in data) || data.gameCategory in [
+          'FREE_FIRE', 'LUDO', 'CHESS', 'AETHER_CROWN', 'REVERSI', 'CONNECT_FOUR', 'PUBG', 'EFOOTBALL', 'ESPORTS'
+        ]) &&
+        (!('modeLabel' in data) || (data.modeLabel is string && data.modeLabel.size() >= 1 && data.modeLabel.size() <= 48)) &&
+        (!('mapName' in data) || (data.mapName is string && data.mapName.size() >= 1 && data.mapName.size() <= 64)) &&
+        (!('bannerKey' in data) || (data.bannerKey is string && data.bannerKey.size() >= 1 && data.bannerKey.size() <= 48)) &&
+        (!('perKillReward' in data) || (data.perKillReward is number && data.perKillReward >= 0 && data.perKillReward <= 100000)) &&
+        (!('prizeRanksJson' in data) || (data.prizeRanksJson is string && data.prizeRanksJson.size() <= 4000)) &&
+        (!('joinedCount' in data) || (data.joinedCount is int && data.joinedCount >= 0 && data.joinedCount <= data.maxSlots)) &&
+        (!('startTimeLabel' in data) || (data.startTimeLabel is string && data.startTimeLabel.size() <= 80)) &&
+        (!('matchStartTimeMillis' in data) || (data.matchStartTimeMillis is int && data.matchStartTimeMillis >= 0)) &&
+        (!('preMatchAlertMinutes' in data) || (data.preMatchAlertMinutes is int && data.preMatchAlertMinutes >= 1 && data.preMatchAlertMinutes <= 180)) &&
+        (!('roomAlertSent' in data) || data.roomAlertSent is bool) &&
+        (!('versionLabel' in data) || (data.versionLabel is string && data.versionLabel.size() <= 80)) &&
+        (!('rulesNotice' in data) || (data.rulesNotice is string && data.rulesNotice.size() <= 600)) &&
+        (!('adminCommissionPercent' in data) || (data.adminCommissionPercent is number && data.adminCommissionPercent >= 0 && data.adminCommissionPercent <= 100)) &&
+        (!('roomIdCode' in data) || (data.roomIdCode is string && data.roomIdCode.size() <= 64)) &&
+        (!('roomPassword' in data) || (data.roomPassword is string && data.roomPassword.size() <= 64)) &&
+        (!('winnerName' in data) || (data.winnerName is string && data.winnerName.size() <= 80)) &&
+        (!('localRoomId' in data) || (data.localRoomId is int && data.localRoomId >= 0)) &&
+        data.createdAt is timestamp &&
+        data.createdAt <= request.time &&
+        data.updatedAt is timestamp &&
+        data.updatedAt <= request.time;
+    }
+
+    function isPlayerJoiningTournament(tournamentId) {
+      return resource.data.status in ['UPCOMING', 'LIVE'] &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['playerUids', 'joinedCount', 'updatedAt']) &&
+        !(request.auth.uid in resource.data.playerUids) &&
+        request.auth.uid in request.resource.data.playerUids &&
+        request.resource.data.playerUids.size() == resource.data.playerUids.size() + 1 &&
+        request.resource.data.playerUids.hasAll(resource.data.playerUids) &&
+        request.resource.data.playerUids.size() <= resource.data.maxSlots &&
+        (!('joinedCount' in resource.data) || (
+          request.resource.data.joinedCount == resource.data.joinedCount + 1 &&
+          request.resource.data.joinedCount <= resource.data.maxSlots
+        )) &&
+        (
+          !('joinedCount' in resource.data) ||
+          existsAfter(/databases/$(database)/documents/tournaments/$(tournamentId)/entries/$(request.auth.uid))
+        );
+    }
+
+    function isValidTournamentEntry(data, tournamentId) {
+      return data.keys().hasAll([
+          'tournamentId',
+          'userId',
+          'usernameSnapshot',
+          'inGameName',
+          'inGameUid',
+          'entryFeePaid',
+          'joinedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'tournamentId',
+          'userId',
+          'usernameSnapshot',
+          'inGameName',
+          'inGameUid',
+          'entryFeePaid',
+          'joinedAt'
+        ]) &&
+        data.tournamentId is string &&
+        data.tournamentId == tournamentId &&
+        data.userId is string &&
+        data.userId.size() >= 1 &&
+        data.userId.size() <= 128 &&
+        data.usernameSnapshot is string &&
+        data.usernameSnapshot.size() <= 64 &&
+        data.inGameName is string &&
+        data.inGameName.size() >= 1 &&
+        data.inGameName.size() <= 64 &&
+        data.inGameUid is string &&
+        data.inGameUid.size() >= 1 &&
+        data.inGameUid.size() <= 64 &&
+        data.entryFeePaid is number &&
+        data.entryFeePaid >= 0 &&
+        data.entryFeePaid <= 100000 &&
+        data.joinedAt is timestamp &&
+        data.joinedAt <= request.time;
+    }
+
+    match /tournaments/{tournamentId} {
+      allow get: if isSignedIn() && isValidDocId(tournamentId);
+      allow list: if isSignedIn();
+      allow create: if isAdmin() &&
+        isValidDocId(tournamentId) &&
+        isValidTournament(request.resource.data);
+      allow update: if isSignedIn() &&
+        isValidDocId(tournamentId) &&
+        isValidTournament(request.resource.data) &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        (isAdmin() || isPlayerJoiningTournament(tournamentId));
+      allow delete: if isAdmin() && isValidDocId(tournamentId);
+
+      match /entries/{entryId} {
+        allow get: if isSignedIn() && isValidDocId(tournamentId) && isValidDocId(entryId);
+        allow list: if isSignedIn() && isValidDocId(tournamentId);
+        allow create: if isSignedIn() &&
+          isValidDocId(tournamentId) &&
+          isValidDocId(entryId) &&
+          entryId == request.auth.uid &&
+          request.resource.data.userId == request.auth.uid &&
+          isValidTournamentEntry(request.resource.data, tournamentId) &&
+          exists(/databases/$(database)/documents/tournaments/$(tournamentId)) &&
+          get(/databases/$(database)/documents/tournaments/$(tournamentId)).data.status in ['UPCOMING', 'LIVE'];
+        allow update: if false;
+        allow delete: if isAdmin() && isValidDocId(tournamentId) && isValidDocId(entryId);
+      }
+    }
+
+    // ---- Default-Deny Catch-All ----
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

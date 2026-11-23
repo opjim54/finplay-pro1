@@ -1,0 +1,589 @@
+{
+  "entities": {
+    "CloudBackupVault": {
+      "title": "CloudBackupVault",
+      "description": "Serialized full finance database backup snapshot stored per authenticated Google user.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the backup owner."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Connected Gmail address of the backup owner."
+        },
+        "payloadJson": {
+          "type": "string",
+          "description": "Serialized FullBackupSnapshot JSON payload."
+        },
+        "exportedAt": {
+          "type": "integer",
+          "description": "Epoch milliseconds when the snapshot was exported."
+        },
+        "accountCount": {
+          "type": "integer",
+          "description": "Number of financial accounts in the backup."
+        },
+        "transactionCount": {
+          "type": "integer",
+          "description": "Number of ledger transactions in the backup."
+        },
+        "schemaVersion": {
+          "type": "integer",
+          "description": "Backup schema version number."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the backup record was first created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the backup record was last updated."
+        }
+      },
+      "required": [
+        "userId",
+        "email",
+        "payloadJson",
+        "exportedAt",
+        "accountCount",
+        "transactionCount",
+        "schemaVersion",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "DualWalletSummary": {
+      "title": "DualWalletSummary",
+      "description": "Cloud mirror of a user's FinPlay Pro Tournament Wallet, Game Wallet, and equipped Armory items.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the wallet owner."
+        },
+        "tournamentBalance": {
+          "type": "number",
+          "description": "Tournament Wallet balance (deposits, match entries)."
+        },
+        "winningBalance": {
+          "type": "number",
+          "description": "Withdrawable Winning Coins balance earned from tournament victories."
+        },
+        "gameBalance": {
+          "type": "number",
+          "description": "Game Wallet coin balance (one-way transfer & 100% tournament loss cashback)."
+        },
+        "equippedBoardSkinId": {
+          "type": "string",
+          "description": "Currently equipped Armory board skin ID."
+        },
+        "equippedAvatarId": {
+          "type": "string",
+          "description": "Currently equipped Armory avatar ID."
+        },
+        "ownedItemsCsv": {
+          "type": "string",
+          "description": "Comma-separated list of owned Armory skin/avatar IDs."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when wallet summary was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when wallet summary was last updated."
+        }
+      },
+      "required": [
+        "userId",
+        "tournamentBalance",
+        "gameBalance",
+        "equippedBoardSkinId",
+        "equippedAvatarId",
+        "ownedItemsCsv",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "WalletRequestDoc": {
+      "title": "WalletRequestDoc",
+      "description": "Manual bKash, Nagad, or Rocket deposit/withdrawal request awaiting Admin review.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the requesting user."
+        },
+        "requestType": {
+          "type": "string",
+          "enum": ["DEPOSIT", "WITHDRAW"],
+          "description": "Type of wallet request."
+        },
+        "channel": {
+          "type": "string",
+          "enum": ["BKASH", "NAGAD", "ROCKET", "BINANCE"],
+          "description": "Payment channel (bKash, Nagad, Rocket, or Binance Pay/TRC20)."
+        },
+        "amount": {
+          "type": "number",
+          "description": "Requested amount."
+        },
+        "accountNumber": {
+          "type": "string",
+          "description": "Sender/receiver mobile number, Binance Pay ID, or USDT TRC20 address."
+        },
+        "transactionId": {
+          "type": "string",
+          "description": "Mobile banking TrxID for deposit verification."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["PENDING", "APPROVED", "PAID", "REJECTED"],
+          "description": "Approval lifecycle state."
+        },
+        "adminNote": {
+          "type": "string",
+          "description": "Optional note left by Admin upon approval/rejection."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when request was submitted."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when request was last updated."
+        }
+      },
+      "required": [
+        "userId",
+        "requestType",
+        "channel",
+        "amount",
+        "accountNumber",
+        "transactionId",
+        "status",
+        "adminNote",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "MultiplayerRoomDoc": {
+      "title": "MultiplayerRoomDoc",
+      "description": "Real-time online multiplayer game room supporting 6-digit Room Code invites and Public Quick Match.",
+      "type": "object",
+      "properties": {
+        "roomCode": {
+          "type": "string",
+          "description": "6-character uppercase alphanumeric room code (matches document ID)."
+        },
+        "gameType": {
+          "type": "string",
+          "enum": ["LUDO", "CHESS", "AETHER_CROWN", "REVERSI", "CONNECT_FOUR", "CARROM", "SNAKES_LADDERS", "FRUIT_SLASH"],
+          "description": "Game type hosted in this room."
+        },
+        "hostUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the host player (Player 1)."
+        },
+        "hostName": {
+          "type": "string",
+          "description": "Display name and avatar crest of the host."
+        },
+        "guestUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the joining guest player (Player 2), empty while waiting."
+        },
+        "guestName": {
+          "type": "string",
+          "description": "Display name and avatar crest of the guest player."
+        },
+        "memberUids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Array of participant UIDs ([hostUid] while waiting, [hostUid, guestUid] while playing)."
+        },
+        "publicRoom": {
+          "type": "boolean",
+          "description": "True if discoverable via Quick Match; false for private Room Code invites."
+        },
+        "entryFee": {
+          "type": "number",
+          "description": "Optional Tournament entry tier for this match (0 for free)."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["WAITING", "PLAYING", "FINISHED", "CANCELLED"],
+          "description": "Room lifecycle state."
+        },
+        "turnUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the player whose turn is active."
+        },
+        "winnerUid": {
+          "type": "string",
+          "description": "Winning player UID, 'DRAW', or empty string while ongoing."
+        },
+        "statePayload": {
+          "type": "string",
+          "description": "Serialized JSON snapshot of the board game state."
+        },
+        "moveCount": {
+          "type": "integer",
+          "description": "Monotonically increasing move counter."
+        },
+        "lastMoveSummary": {
+          "type": "string",
+          "description": "Human-readable summary of the last move."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when room was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when room was last updated."
+        }
+      },
+      "required": [
+        "roomCode",
+        "gameType",
+        "hostUid",
+        "hostName",
+        "guestUid",
+        "guestName",
+        "memberUids",
+        "publicRoom",
+        "entryFee",
+        "status",
+        "turnUid",
+        "winnerUid",
+        "statePayload",
+        "moveCount",
+        "lastMoveSummary",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "WalletLedgerDoc": {
+      "title": "WalletLedgerDoc",
+      "description": "Real-time Firestore-synced Tournament, Winning, and Game Wallet transaction history entry.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the wallet owner."
+        },
+        "walletBucket": {
+          "type": "string",
+          "enum": ["TOURNAMENT", "WINNING", "GAME"],
+          "description": "Wallet bucket affected by this ledger transaction."
+        },
+        "kind": {
+          "type": "string",
+          "description": "Ledger event kind (e.g. DEPOSIT_APPROVED, TOURNAMENT_ENTRY, TOURNAMENT_WIN_PRIZE)."
+        },
+        "amountDelta": {
+          "type": "number",
+          "description": "Signed amount change (+ credit, - debit)."
+        },
+        "note": {
+          "type": "string",
+          "description": "Human-readable transaction note."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the ledger entry was recorded."
+        }
+      },
+      "required": [
+        "userId",
+        "walletBucket",
+        "kind",
+        "amountDelta",
+        "note",
+        "createdAt"
+      ]
+    },
+    "BroadcastDoc": {
+      "title": "BroadcastDoc",
+      "description": "Real-time Admin broadcast announcement and Free Fire room alert delivered to all signed-in users.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Broadcast headline."
+        },
+        "message": {
+          "type": "string",
+          "description": "Broadcast body message."
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["INFO", "TOURNAMENT", "PROMO", "URGENT"],
+          "description": "Notification priority tag."
+        },
+        "senderEmail": {
+          "type": "string",
+          "description": "Verified Admin email address."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the broadcast was published."
+        }
+      },
+      "required": [
+        "title",
+        "message",
+        "priority",
+        "senderEmail",
+        "createdAt"
+      ]
+    },
+    "TournamentDoc": {
+      "title": "Tournament",
+      "description": "Canonical Firestore 'tournaments' collection data model storing title, entry fee, prize pool, player UIDs, scheduled start timestamp, game type (e.g. Ludo, Free Fire), and Arena Hub metadata.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Tournament headline title."
+        },
+        "gameType": {
+          "type": "string",
+          "enum": ["FREE_FIRE", "LUDO", "CHESS", "AETHER_CROWN", "REVERSI", "CONNECT_FOUR", "PUBG", "EFOOTBALL", "ESPORTS", "CARROM", "SNAKES_LADDERS", "FRUIT_SLASH"],
+          "description": "Primary game type hosted by this tournament (e.g. LUDO, FREE_FIRE)."
+        },
+        "entryFee": {
+          "type": "number",
+          "description": "Entry fee in Tournament Coins."
+        },
+        "prizePool": {
+          "type": "number",
+          "description": "Total prize pool in Winning Coins."
+        },
+        "playerUids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Ordered list of registered player Firebase Auth UIDs."
+        },
+        "startTime": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Native Firestore Timestamp when the tournament is scheduled to start."
+        },
+        "maxSlots": {
+          "type": "integer",
+          "description": "Maximum number of participant slots."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["UPCOMING", "LIVE", "COMPLETED"],
+          "description": "Tournament lifecycle status."
+        },
+        "gameCategory": {
+          "type": "string",
+          "enum": ["FREE_FIRE", "LUDO", "CHESS", "AETHER_CROWN", "REVERSI", "CONNECT_FOUR", "PUBG", "EFOOTBALL", "ESPORTS"],
+          "description": "Mirrored game category label for Hub filtering compatibility."
+        },
+        "modeLabel": {
+          "type": "string",
+          "description": "Match mode label (e.g., SQUAD, SOLO, 5P LUDO, BLITZ)."
+        },
+        "mapName": {
+          "type": "string",
+          "description": "Map or arena theme name."
+        },
+        "bannerKey": {
+          "type": "string",
+          "description": "Hero banner asset key."
+        },
+        "perKillReward": {
+          "type": "number",
+          "description": "Per-kill bonus reward."
+        },
+        "prizeRanksJson": {
+          "type": "string",
+          "description": "JSON encoded list of multi-rank prizes."
+        },
+        "joinedCount": {
+          "type": "integer",
+          "description": "Current number of joined participants (synced with playerUids.size)."
+        },
+        "startTimeLabel": {
+          "type": "string",
+          "description": "Formatted display label of scheduled match start."
+        },
+        "matchStartTimeMillis": {
+          "type": "integer",
+          "description": "UTC epoch milliseconds synchronized with startTime Timestamp."
+        },
+        "preMatchAlertMinutes": {
+          "type": "integer",
+          "description": "Minutes before start when pre-match room alert activates."
+        },
+        "roomAlertSent": {
+          "type": "boolean",
+          "description": "True after Admin dispatches the Room ID & Password alert."
+        },
+        "versionLabel": {
+          "type": "string",
+          "description": "Eligibility or platform label."
+        },
+        "rulesNotice": {
+          "type": "string",
+          "description": "Anti-cheat and tournament rules notice."
+        },
+        "adminCommissionPercent": {
+          "type": "number",
+          "description": "Admin commission percentage."
+        },
+        "roomIdCode": {
+          "type": "string",
+          "description": "Custom room ID or match lobby code."
+        },
+        "roomPassword": {
+          "type": "string",
+          "description": "Custom room password."
+        },
+        "winnerName": {
+          "type": "string",
+          "description": "Declared champion display name."
+        },
+        "localRoomId": {
+          "type": "integer",
+          "description": "Optional Room database ID bridge for local mirror deduplication."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when tournament was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when tournament was last updated."
+        }
+      },
+      "required": [
+        "title",
+        "gameType",
+        "entryFee",
+        "prizePool",
+        "playerUids",
+        "startTime",
+        "maxSlots",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "TournamentEntryDoc": {
+      "title": "TournamentEntryDoc",
+      "description": "Deterministic per-user participant registration inside a Firestore tournament's live roster.",
+      "type": "object",
+      "properties": {
+        "tournamentId": {
+          "type": "string",
+          "description": "Parent tournament document ID."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the registered player."
+        },
+        "usernameSnapshot": {
+          "type": "string",
+          "description": "Public FinPlay username snapshot."
+        },
+        "inGameName": {
+          "type": "string",
+          "description": "Player's in-game display name (IGN)."
+        },
+        "inGameUid": {
+          "type": "string",
+          "description": "Player's in-game UID or tag."
+        },
+        "entryFeePaid": {
+          "type": "number",
+          "description": "Entry fee paid upon registration."
+        },
+        "joinedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when player joined."
+        }
+      },
+      "required": [
+        "tournamentId",
+        "userId",
+        "usernameSnapshot",
+        "inGameName",
+        "inGameUid",
+        "entryFeePaid",
+        "joinedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/backups/{backupId}": {
+      "schema": {
+        "$ref": "#/entities/CloudBackupVault"
+      },
+      "description": "Per-user private cloud backup vault documents (e.g. 'latest')."
+    },
+    "/users/{userId}/wallet/{walletDocId}": {
+      "schema": {
+        "$ref": "#/entities/DualWalletSummary"
+      },
+      "description": "Per-user Dual Wallet & Armory cloud summary."
+    },
+    "/users/{userId}/wallet_ledger/{entryId}": {
+      "schema": {
+        "$ref": "#/entities/WalletLedgerDoc"
+      },
+      "description": "Per-user real-time Tournament/Winning/Game Wallet transaction history."
+    },
+    "/wallet_requests/{requestId}": {
+      "schema": {
+        "$ref": "#/entities/WalletRequestDoc"
+      },
+      "description": "Manual bKash/Nagad/Rocket/Binance deposit & withdrawal requests reviewed by Admin."
+    },
+    "/multiplayer_rooms/{roomId}": {
+      "schema": {
+        "$ref": "#/entities/MultiplayerRoomDoc"
+      },
+      "description": "Real-time online multiplayer rooms supporting 6-digit Room Code invites and Quick Match."
+    },
+    "/broadcasts/{broadcastId}": {
+      "schema": {
+        "$ref": "#/entities/BroadcastDoc"
+      },
+      "description": "Real-time Admin broadcast alerts synced to all signed-in FinPlay Pro clients."
+    },
+    "/tournaments/{tournamentId}": {
+      "schema": {
+        "$ref": "#/entities/TournamentDoc"
+      },
+      "description": "Centralized live Tournament Hub documents synced in real time across all players."
+    },
+    "/tournaments/{tournamentId}/entries/{entryId}": {
+      "schema": {
+        "$ref": "#/entities/TournamentEntryDoc"
+      },
+      "description": "Real-time per-tournament joined players roster (deterministic entryId == userId)."
+    }
+  }
+}
