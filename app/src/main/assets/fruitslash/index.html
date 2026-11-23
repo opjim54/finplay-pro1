@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>FinPlay Pro • 3D Realistic Fruit Slash Ninja</title>
+    <script src="js/three.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background: radial-gradient(circle at center, #1e0938 0%, #090214 100%);
+            color: #ffffff;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            touch-action: none;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        #trail-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 5;
+            pointer-events: none;
+        }
+
+        /* Top HUD */
+        #hud {
+            position: absolute;
+            top: 14px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 95%;
+            max-width: 760px;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            pointer-events: none;
+        }
+
+        .hud-card {
+            background: rgba(24, 11, 46, 0.88);
+            backdrop-filter: blur(14px);
+            border: 1px solid rgba(168, 85, 247, 0.4);
+            border-radius: 18px;
+            padding: 8px 18px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+            pointer-events: auto;
+        }
+
+        .btn-exit {
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            color: #f87171;
+            border-radius: 14px;
+            padding: 8px 14px;
+            font-size: 12px;
+            font-weight: 800;
+            cursor: pointer;
+            pointer-events: auto;
+            backdrop-filter: blur(8px);
+            transition: all 0.2s;
+        }
+
+        .btn-exit:hover {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: #ef4444;
+        }
+
+        .score-display {
+            font-size: 26px;
+            font-weight: 900;
+            color: #fde047;
+            text-shadow: 0 0 12px rgba(253, 224, 71, 0.5);
+        }
+
+        .lives-display {
+            display: flex;
+            gap: 4px;
+            font-size: 20px;
+        }
+
+        .heart {
+            transition: all 0.3s;
+        }
+
+        .heart.lost {
+            filter: grayscale(1) opacity(0.35);
+            transform: scale(0.85);
+        }
+
+        /* Slicing Combo Banner */
+        #combo-banner {
+            position: absolute;
+            top: 85px;
+            left: 50%;
+            transform: translateX(-50%) scale(0.8);
+            z-index: 15;
+            background: linear-gradient(135deg, #ec4899, #8b5cf6);
+            border: 2px solid #f472b6;
+            border-radius: 20px;
+            padding: 8px 24px;
+            font-size: 18px;
+            font-weight: 900;
+            color: #ffffff;
+            box-shadow: 0 0 25px rgba(236, 72, 153, 0.8);
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        #combo-banner.show {
+            opacity: 1;
+            transform: translateX(-50%) scale(1.1);
+        }
+
+        /* Bottom Controls Bar */
+        #bottom-bar {
+            position: absolute;
+            bottom: 12px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 95%;
+            max-width: 760px;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(24, 11, 46, 0.92);
+            backdrop-filter: blur(14px);
+            border: 1px solid rgba(168, 85, 247, 0.4);
+            border-radius: 20px;
+            padding: 10px 16px;
+            gap: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.7);
+        }
+
+        .mode-chips {
+            display: flex;
+            gap: 6px;
+            overflow-x: auto;
+            padding-bottom: 2px;
+        }
+
+        .chip {
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #cbd5e1;
+            padding: 6px 12px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 800;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+
+        .chip.active {
+            background: linear-gradient(135deg, #a855f7, #6366f1);
+            color: #ffffff;
+            border-color: #c084fc;
+            box-shadow: 0 2px 12px rgba(168, 85, 247, 0.5);
+        }
+
+        .btn-ctrl {
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #ffffff;
+            border-radius: 12px;
+            padding: 8px 14px;
+            font-size: 12px;
+            font-weight: 800;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        /* Modals */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.82);
+            backdrop-filter: blur(10px);
+            z-index: 100;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-card {
+            background: #18092e;
+            border: 2px solid #a855f7;
+            border-radius: 24px;
+            padding: 24px;
+            width: 90%;
+            max-width: 440px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.9);
+        }
+
+        .btn-play {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: #ffffff;
+            border: none;
+            border-radius: 14px;
+            padding: 12px 20px;
+            font-size: 15px;
+            font-weight: 900;
+            cursor: pointer;
+        }
+
+        .room-code-box {
+            background: #090214;
+            border: 2px dashed #f59e0b;
+            border-radius: 14px;
+            padding: 12px;
+            font-size: 26px;
+            font-weight: 900;
+            color: #fbbf24;
+            letter-spacing: 2px;
+        }
+
+        .room-input {
+            background: #090214;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            padding: 12px;
+            color: #ffffff;
+            font-size: 15px;
+            font-weight: 800;
+            text-align: center;
+            outline: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    <canvas id="trail-canvas"></canvas>
+
+    <!-- Top Score & Health HUD -->
+    <div id="hud">
+        <button class="btn-exit" onclick="exitGame()">⬅ Arena</button>
+
+        <div class="hud-card">
+            <span style="font-size: 12px; font-weight: 800; color: #cbd5e1;">SCORE</span>
+            <span class="score-display" id="score-text">0</span>
+        </div>
+
+        <div class="hud-card" id="lives-card">
+            <span style="font-size: 12px; font-weight: 800; color: #cbd5e1;">LIVES</span>
+            <div class="lives-display" id="lives-container">
+                <span class="heart">❤️</span>
+                <span class="heart">❤️</span>
+                <span class="heart">❤️</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Slicing Combo Banner -->
+    <div id="combo-banner">COMBO x3! +30</div>
+
+    <!-- Bottom Modes -->
+    <div id="bottom-bar">
+        <div class="mode-chips">
+            <span class="chip active" id="chip-classic" onclick="setMode('classic')">🍉 Classic</span>
+            <span class="chip" id="chip-bot" onclick="setMode('bot')">🤖 Vs Bot Rival</span>
+            <span class="chip" id="chip-friend" onclick="setMode('friend')">🤝 Play With Friend</span>
+            <span class="chip" id="chip-practice" onclick="setMode('practice')">🎯 Offline Practice</span>
+            <span class="chip" id="chip-tournament" onclick="setMode('tournament')">🏆 Tournament</span>
+        </div>
+        <div style="display: flex; gap: 6px;">
+            <button class="btn-ctrl" onclick="openFriendModal()">🔗 Invite</button>
+            <button class="btn-ctrl" onclick="restartGame()">🔄 Reset</button>
+        </div>
+    </div>
+
+    <!-- Play with Friend Modal -->
+    <div class="modal" id="friend-modal">
+        <div class="modal-card">
+            <div style="font-size: 40px;">🍉🤝</div>
+            <h3 style="font-size: 20px; font-weight: 900; color: #fde047;">Fruit Slash Duel With Friend</h3>
+            <p style="font-size: 13px; color: #cbd5e1;">Share this private room code to challenge your friend in a high-score duel!</p>
+            <div class="room-code-box" id="display-room-code">FS-8391</div>
+            <div style="display: flex; gap: 8px;">
+                <button class="btn-play" style="flex: 1;" onclick="copyRoomCode()">📋 Copy Code</button>
+                <button class="btn-play" style="flex: 1; background: #25d366;" onclick="shareWhatsApp()">💬 WhatsApp</button>
+            </div>
+            <input type="text" class="room-input" id="join-room-input" placeholder="ENTER ROOM CODE (e.g. FS-1234)">
+            <button class="btn-play" onclick="joinRoom()">🚀 JOIN DUEL NOW</button>
+            <button class="btn-ctrl" onclick="closeFriendModal()">Close</button>
+        </div>
+    </div>
+
+    <!-- Game Over Modal -->
+    <div class="modal" id="game-over-modal">
+        <div class="modal-card">
+            <div style="font-size: 50px;">🍉💥</div>
+            <div style="font-size: 24px; font-weight: 900; color: #fbbf24;" id="modal-title">Game Over!</div>
+            <div style="font-size: 16px; color: #38bdf8; font-weight: 800;" id="modal-score">Final Score: 185</div>
+            <div style="font-size: 13px; color: #cbd5e1;" id="modal-coins">
+                🎉 Match Reward: +40 Tournament Coins credited to Play Wallet!
+            </div>
+            <button class="btn-play" onclick="restartGame()">Play Again</button>
+            <button class="btn-play" style="background: #475569;" onclick="exitGame()">Exit to Arena</button>
+        </div>
+    </div>
+
+    <script>
+        // --- Web Audio Procedural Sound Synthesizer ---
+        let audioCtx = null;
+        function getAudioContext() {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            return audioCtx;
+        }
+
+        function playSound(type) {
+            try {
+                const ctx = getAudioContext();
+                if (ctx.state === 'suspended') ctx.resume();
+                const now = ctx.currentTime;
+
+                if (type === 'swish') {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(800, now);
+                    osc.frequency.exponentialRampToValueAtTime(200, now + 0.12);
+                    gain.gain.setValueAtTime(0.25, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.12);
+                } else if (type === 'splat') {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(350, now);
+                    osc.frequency.exponentialRampToValueAtTime(80, now + 0.18);
+                    gain.gain.setValueAtTime(0.4, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.18);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.18);
+                } else if (type === 'boom') {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(140, now);
+                    osc.frequency.exponentialRampToValueAtTime(30, now + 0.45);
+                    gain.gain.setValueAtTime(0.6, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.45);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.45);
+                } else if (type === 'combo') {
+                    [440, 554, 659, 880].forEach((f, idx) => {
+                        const o = ctx.createOscillator();
+                        const g = ctx.createGain();
+                        o.frequency.setValueAtTime(f, now + idx * 0.06);
+                        g.gain.setValueAtTime(0.25, now + idx * 0.06);
+                        g.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.06 + 0.2);
+                        o.connect(g);
+                        g.connect(ctx.destination);
+                        o.start(now + idx * 0.06);
+                        o.stop(now + idx * 0.06 + 0.2);
+                    });
+                }
+            } catch(e) {}
+        }
+
+        // --- Three.js Scene Setup ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x110426);
+
+        const camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 0, 11);
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        container.appendChild(renderer.domElement);
+
+        // Studio Lighting
+        const ambientLight = new THREE.AmbientLight(0xfff5eb, 0.9);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xfffbeb, 1.25);
+        dirLight.position.set(6, 10, 12);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
+
+        const fillLight = new THREE.DirectionalLight(0xc084fc, 0.7);
+        fillLight.position.set(-6, -6, 6);
+        scene.add(fillLight);
+
+        // --- Procedural Canvas Textures for Realistic Fruits ---
+
+        // 1. Watermelon Rind Texture (Dark green wavy stripes)
+        function createWatermelonRindTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#22c55e'; // Light green base
+            ctx.fillRect(0, 0, 512, 512);
+
+            ctx.fillStyle = '#14532d'; // Dark stripes
+            for (let x = 0; x < 512; x += 48) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                for (let y = 0; y <= 512; y += 32) {
+                    const wave = Math.sin(y * 0.04 + x) * 14;
+                    ctx.lineTo(x + wave, y);
+                }
+                ctx.lineWidth = 22;
+                ctx.strokeStyle = '#14532d';
+                ctx.stroke();
+            }
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        // 2. Watermelon Flesh Texture (Red meat + black seeds)
+        function createWatermelonFleshTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+
+            // White/Green outer rind ring
+            ctx.fillStyle = '#bbf7d0';
+            ctx.beginPath();
+            ctx.arc(256, 256, 256, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Juicy Red center
+            ctx.fillStyle = '#e11d48';
+            ctx.beginPath();
+            ctx.arc(256, 256, 235, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Black teardrop seeds
+            ctx.fillStyle = '#0f172a';
+            for (let i = 0; i < 16; i++) {
+                const angle = (i / 16) * Math.PI * 2 + (Math.random() * 0.1);
+                const r = 120 + Math.random() * 60;
+                const sx = 256 + Math.cos(angle) * r;
+                const sy = 256 + Math.sin(angle) * r;
+                ctx.beginPath();
+                ctx.ellipse(sx, sy, 8, 4, angle, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        // 3. Orange Sliced Texture (Segments + Pulp)
+        function createOrangeFleshTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+
+            // White pith ring
+            ctx.fillStyle = '#ffedd5';
+            ctx.beginPath();
+            ctx.arc(256, 256, 256, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 10 Citrus Segments
+            for (let i = 0; i < 10; i++) {
+                const a1 = (i / 10) * Math.PI * 2 + 0.05;
+                const a2 = ((i + 1) / 10) * Math.PI * 2 - 0.05;
+                ctx.fillStyle = '#ea580c';
+                ctx.beginPath();
+                ctx.moveTo(256, 256);
+                ctx.arc(256, 256, 235, a1, a2);
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            // White center core
+            ctx.fillStyle = '#ffedd5';
+            ctx.beginPath();
+            ctx.arc(256, 256, 24, 0, Math.PI * 2);
+            ctx.fill();
+
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        // 4. Apple Flesh Texture (Pale yellow-white + core)
+        function createAppleFleshTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#fefce8'; // Crisp pale flesh
+            ctx.fillRect(0, 0, 512, 512);
+
+            // Core circle
+            ctx.fillStyle = '#fef08a';
+            ctx.beginPath();
+            ctx.arc(256, 256, 60, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 2 Brown seeds
+            ctx.fillStyle = '#78350f';
+            ctx.beginPath();
+            ctx.ellipse(244, 256, 10, 5, 0.4, 0, Math.PI * 2);
+            ctx.ellipse(268, 256, 10, 5, -0.4, 0, Math.PI * 2);
+            ctx.fill();
+
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        // 5. Coconut Flesh Texture (Husk rim + white meat + dark center)
+        function createCoconutFleshTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+
+            // Dark shell rim
+            ctx.fillStyle = '#451a03';
+            ctx.beginPath();
+            ctx.arc(256, 256, 256, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Thick white meat ring
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(256, 256, 230, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Hollow inner center
+            ctx.fillStyle = '#1c1917';
+            ctx.beginPath();
+            ctx.arc(256, 256, 140, 0, Math.PI * 2);
+            ctx.fill();
+
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        // Pre-create textures
+        const watermelonRindTex = createWatermelonRindTexture();
+        const watermelonFleshTex = createWatermelonFleshTexture();
+        const orangeFleshTex = createOrangeFleshTexture();
+        const appleFleshTex = createAppleFleshTexture();
+        const coconutFleshTex = createCoconutFleshTexture();
+
+        // --- Fruit Definitions ---
+        const FRUIT_TYPES = [
+            {
+                name: 'WATERMELON',
+                radius: 0.95,
+                points: 10,
+                rindTex: watermelonRindTex,
+                fleshTex: watermelonFleshTex,
+                splatColor: '#e11d48'
+            },
+            {
+                name: 'ORANGE',
+                radius: 0.72,
+                points: 10,
+                color: 0xf97316,
+                fleshTex: orangeFleshTex,
+                splatColor: '#ea580c'
+            },
+            {
+                name: 'APPLE',
+                radius: 0.70,
+                points: 10,
+                color: 0xdc2626,
+                fleshTex: appleFleshTex,
+                splatColor: '#fde047'
+            },
+            {
+                name: 'COCONUT',
+                radius: 0.76,
+                points: 15,
+                color: 0x451a03,
+                fleshTex: coconutFleshTex,
+                splatColor: '#ffffff'
+            },
+            {
+                name: 'BOMB',
+                radius: 0.65,
+                points: 0,
+                isBomb: true
+            }
+        ];
+
+        let activeFruits = [];
+        let juiceParticles = [];
+        let score = 0;
+        let lives = 3;
+        let gameActive = true;
+        let gameMode = 'classic';
+        let lastComboTime = 0;
+        let comboCount = 0;
+
+        function setMode(mode) {
+            gameMode = mode;
+            document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+            const active = document.getElementById(`chip-${mode}`);
+            if (active) active.classList.add('active');
+
+            if (mode === 'friend') {
+                openFriendModal();
+            } else if (mode === 'practice') {
+                document.getElementById('lives-card').style.display = 'none';
+            } else {
+                document.getElementById('lives-card').style.display = 'flex';
+            }
+            restartGame();
+        }
+
+        // --- Build 3D Realistic Fruit Mesh ---
+        function createFruitMesh(fruitDef, isHalf = false, halfSide = 1) {
+            const group = new THREE.Group();
+
+            if (fruitDef.isBomb) {
+                // Metallic Cast-iron Bomb
+                const geo = new THREE.SphereGeometry(fruitDef.radius, 28, 28);
+                const mat = new THREE.MeshStandardMaterial({
+                    color: 0x18181b,
+                    roughness: 0.35,
+                    metalness: 0.85
+                });
+                const body = new THREE.Mesh(geo, mat);
+                group.add(body);
+
+                // Brass Fuse Collar
+                const collarGeo = new THREE.CylinderGeometry(0.14, 0.16, 0.12, 16);
+                const collarMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.3, metalness: 0.8 });
+                const collar = new THREE.Mesh(collarGeo, collarMat);
+                collar.position.set(0, fruitDef.radius + 0.05, 0);
+                group.add(collar);
+
+                // Fuse Rope
+                const ropeGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.28, 12);
+                const ropeMat = new THREE.MeshBasicMaterial({ color: 0x78350f });
+                const rope = new THREE.Mesh(ropeGeo, ropeMat);
+                rope.position.set(0, fruitDef.radius + 0.22, 0);
+                group.add(rope);
+
+                // Glowing Burning Spark
+                const sparkGeo = new THREE.SphereGeometry(0.12, 12, 12);
+                const sparkMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
+                const spark = new THREE.Mesh(sparkGeo, sparkMat);
+                spark.position.set(0, fruitDef.radius + 0.38, 0);
+                group.add(spark);
+            } else if (!isHalf) {
+                // Whole 3D Fruit
+                const geo = new THREE.SphereGeometry(fruitDef.radius, 32, 32);
+                let mat;
+                if (fruitDef.rindTex) {
+                    mat = new THREE.MeshStandardMaterial({ map: fruitDef.rindTex, roughness: 0.35, metalness: 0.08 });
+                } else {
+                    mat = new THREE.MeshStandardMaterial({ color: fruitDef.color, roughness: 0.28, metalness: 0.15 });
+                }
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.castShadow = true;
+                group.add(mesh);
+
+                // Add Stem for Apple
+                if (fruitDef.name === 'APPLE') {
+                    const stemGeo = new THREE.CylinderGeometry(0.03, 0.04, 0.28, 8);
+                    const stemMat = new THREE.MeshStandardMaterial({ color: 0x451a03 });
+                    const stem = new THREE.Mesh(stemGeo, stemMat);
+                    stem.position.set(0, fruitDef.radius + 0.1, 0);
+                    group.add(stem);
+                }
+            } else {
+                // Sliced Hemisphere with Flat Realistic Cross-Section
+                const geo = new THREE.SphereGeometry(fruitDef.radius, 32, 32, 0, Math.PI);
+                let outerMat;
+                if (fruitDef.rindTex) {
+                    outerMat = new THREE.MeshStandardMaterial({ map: fruitDef.rindTex, roughness: 0.35, metalness: 0.08 });
+                } else {
+                    outerMat = new THREE.MeshStandardMaterial({ color: fruitDef.color, roughness: 0.28, metalness: 0.15 });
+                }
+                const outerMesh = new THREE.Mesh(geo, outerMat);
+                group.add(outerMesh);
+
+                // Flat Slice Disc showing Seeds and Pulp Texture!
+                const discGeo = new THREE.CircleGeometry(fruitDef.radius, 32);
+                const discMat = new THREE.MeshStandardMaterial({
+                    map: fruitDef.fleshTex,
+                    roughness: 0.45,
+                    metalness: 0.05,
+                    side: THREE.DoubleSide
+                });
+                const discMesh = new THREE.Mesh(discGeo, discMat);
+                discMesh.rotation.y = Math.PI / 2;
+                group.add(discMesh);
+            }
+
+            return group;
+        }
+
+        // --- Spawn Fruit With Gentle, Realistic Floating Physics Arc ---
+        function spawnFruit() {
+            if (!gameActive) return;
+
+            const isBombChance = (gameMode !== 'practice') && (Math.random() < 0.20);
+            let fruitDef = isBombChance ? FRUIT_TYPES[FRUIT_TYPES.length - 1] : FRUIT_TYPES[Math.floor(Math.random() * (FRUIT_TYPES.length - 1))];
+
+            // Gentle launch trajectory
+            const startX = (Math.random() - 0.5) * 5.5;
+            const startY = -6.5;
+            const targetX = (Math.random() - 0.5) * 2.8;
+
+            // Slow, floaty velocities (tuned for smooth 2.0s hang-time!)
+            const vx = (targetX - startX) * 0.007 + (Math.random() - 0.5) * 0.008;
+            const vy = 0.135 + Math.random() * 0.025;
+            const rotSpeed = {
+                x: (Math.random() - 0.5) * 0.015,
+                y: (Math.random() - 0.5) * 0.015,
+                z: (Math.random() - 0.5) * 0.020
+            };
+
+            const mesh = createFruitMesh(fruitDef);
+            mesh.position.set(startX, startY, 0);
+            scene.add(mesh);
+
+            activeFruits.push({
+                def: fruitDef,
+                mesh: mesh,
+                x: startX,
+                y: startY,
+                vx: vx,
+                vy: vy,
+                rot: rotSpeed,
+                isSliced: false,
+                isHalf: false
+            });
+        }
+
+        // --- Blade Trail on Canvas ---
+        const trailCanvas = document.getElementById('trail-canvas');
+        const trailCtx = trailCanvas.getContext('2d');
+        let trailPoints = [];
+        let isSwiping = false;
+
+        function resizeTrailCanvas() {
+            trailCanvas.width = window.innerWidth;
+            trailCanvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', () => {
+            resizeTrailCanvas();
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        resizeTrailCanvas();
+
+        window.addEventListener('pointerdown', (e) => {
+            isSwiping = true;
+            trailPoints = [{ x: e.clientX, y: e.clientY, time: Date.now() }];
+            playSound('swish');
+        });
+
+        window.addEventListener('pointermove', (e) => {
+            if (!isSwiping) return;
+            const pt = { x: e.clientX, y: e.clientY, time: Date.now() };
+            trailPoints.push(pt);
+            checkBladeSlice(trailPoints[trailPoints.length - 2], pt);
+        });
+
+        window.addEventListener('pointerup', () => {
+            isSwiping = false;
+        });
+
+        function screenToWorld(sx, sy) {
+            const vec = new THREE.Vector3(
+                (sx / window.innerWidth) * 2 - 1,
+                -(sy / window.innerHeight) * 2 + 1,
+                0.5
+            );
+            vec.unproject(camera);
+            const dir = vec.sub(camera.position).normalize();
+            const distance = -camera.position.z / dir.z;
+            return camera.position.clone().add(dir.multiplyScalar(distance));
+        }
+
+        // --- Blade Slice & Realistic Fruit Halving ---
+        function checkBladeSlice(p1, p2) {
+            if (!p1 || !p2) return;
+
+            const w1 = screenToWorld(p1.x, p1.y);
+            const w2 = screenToWorld(p2.x, p2.y);
+
+            let slicedInThisSwipe = 0;
+
+            activeFruits.forEach(fruit => {
+                if (fruit.isSliced) return;
+
+                const fx = fruit.x;
+                const fy = fruit.y;
+                const r = fruit.def.radius * 1.15;
+
+                // Line segment distance to fruit center
+                const dx = w2.x - w1.x;
+                const dy = w2.y - w1.y;
+                const lenSq = dx * dx + dy * dy;
+                let t = 0;
+                if (lenSq > 0) {
+                    t = Math.max(0, Math.min(1, ((fx - w1.x) * dx + (fy - w1.y) * dy) / lenSq));
+                }
+                const closestX = w1.x + t * dx;
+                const closestY = w1.y + t * dy;
+                const dist = Math.hypot(fx - closestX, fy - closestY);
+
+                if (dist < r) {
+                    // Sliced!
+                    fruit.isSliced = true;
+                    slicedInThisSwipe++;
+
+                    if (fruit.def.isBomb) {
+                        playSound('boom');
+                        scene.remove(fruit.mesh);
+                        gameOver("💥 Detonated a Bomb!");
+                        return;
+                    }
+
+                    playSound('splat');
+                    score += fruit.def.points;
+                    document.getElementById('score-text').innerText = score;
+
+                    // Remove whole fruit
+                    scene.remove(fruit.mesh);
+
+                    // Create two realistic tumbling halves!
+                    const half1 = createFruitMesh(fruit.def, true, 1);
+                    half1.position.set(fx - 0.15, fy, 0);
+                    half1.rotation.z = Math.atan2(dy, dx);
+                    scene.add(half1);
+
+                    const half2 = createFruitMesh(fruit.def, true, -1);
+                    half2.position.set(fx + 0.15, fy, 0);
+                    half2.rotation.z = Math.atan2(dy, dx) + Math.PI;
+                    scene.add(half2);
+
+                    activeFruits.push({
+                        def: fruit.def,
+                        mesh: half1,
+                        x: fx - 0.15,
+                        y: fy,
+                        vx: fruit.vx - 0.045,
+                        vy: fruit.vy + 0.02,
+                        rot: { x: 0.04, y: 0.05, z: 0.03 },
+                        isSliced: true,
+                        isHalf: true
+                    });
+
+                    activeFruits.push({
+                        def: fruit.def,
+                        mesh: half2,
+                        x: fx + 0.15,
+                        y: fy,
+                        vx: fruit.vx + 0.045,
+                        vy: fruit.vy + 0.02,
+                        rot: { x: -0.04, y: -0.05, z: -0.03 },
+                        isSliced: true,
+                        isHalf: true
+                    });
+                }
+            });
+
+            // Combo Detection
+            if (slicedInThisSwipe >= 3) {
+                const now = Date.now();
+                comboCount++;
+                playSound('combo');
+                const bonus = slicedInThisSwipe * 10;
+                score += bonus;
+                document.getElementById('score-text').innerText = score;
+
+                const banner = document.getElementById('combo-banner');
+                banner.innerText = `COMBO x${slicedInThisSwipe}! +${bonus} PTS`;
+                banner.classList.add('show');
+                setTimeout(() => banner.classList.remove('show'), 900);
+            }
+        }
+
+        function loseLife() {
+            lives--;
+            updateLivesDisplay();
+            if (lives <= 0) {
+                gameOver("Out of Lives!");
+            }
+        }
+
+        function updateLivesDisplay() {
+            const container = document.getElementById('lives-container');
+            container.innerHTML = '';
+            for (let i = 0; i < 3; i++) {
+                const heart = document.createElement('span');
+                heart.className = `heart ${i >= lives ? 'lost' : ''}`;
+                heart.innerText = '❤️';
+                container.appendChild(heart);
+            }
+        }
+
+        function gameOver(reason = "Game Over!") {
+            gameActive = false;
+            document.getElementById('modal-title').innerText = reason;
+            document.getElementById('modal-score').innerText = `Final Score: ${score}`;
+            document.getElementById('modal-coins').innerText = `🎉 Match Reward: +${Math.round(score / 3)} Tournament Coins credited to Play Wallet!`;
+            document.getElementById('game-over-modal').style.display = 'flex';
+
+            if (window.AndroidBridge && window.AndroidBridge.onMatchEnd) {
+                window.AndroidBridge.onMatchEnd(score >= 50 ? "WIN" : "LOSS", score, true, 80);
+            }
+        }
+
+        function restartGame() {
+            score = 0;
+            lives = 3;
+            gameActive = true;
+            comboCount = 0;
+            document.getElementById('score-text').innerText = '0';
+            updateLivesDisplay();
+            document.getElementById('game-over-modal').style.display = 'none';
+
+            activeFruits.forEach(f => scene.remove(f.mesh));
+            activeFruits = [];
+        }
+
+        function openFriendModal() {
+            const randomCode = 'FS-' + Math.floor(1000 + Math.random() * 9000);
+            document.getElementById('display-room-code').innerText = randomCode;
+            document.getElementById('friend-modal').style.display = 'flex';
+        }
+
+        function closeFriendModal() {
+            document.getElementById('friend-modal').style.display = 'none';
+        }
+
+        function copyRoomCode() {
+            const code = document.getElementById('display-room-code').innerText;
+            navigator.clipboard.writeText(code).then(() => {
+                alert(`Room Code copied: ${code}`);
+            }).catch(() => {
+                prompt("Copy Room Code:", code);
+            });
+        }
+
+        function shareWhatsApp() {
+            const code = document.getElementById('display-room-code').innerText;
+            const text = encodeURIComponent(`🍉 Play 3D Fruit Slash with me on FinPlay Pro! Private Duel Room: ${code}. Join here: http://localhost:8089/fruitslash/`);
+            window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank');
+        }
+
+        function joinRoom() {
+            const code = document.getElementById('join-room-input').value.trim();
+            if (code.length >= 4) {
+                alert(`🚀 Duel Room Connected: ${code}! Match starting...`);
+                closeFriendModal();
+                restartGame();
+            } else {
+                alert('Please enter a valid Room Code (e.g. FS-1234)');
+            }
+        }
+
+        function exitGame() {
+            if (window.AndroidBridge && window.AndroidBridge.exitToArena) {
+                window.AndroidBridge.exitToArena();
+            } else {
+                window.location.href = '/';
+            }
+        }
+
+        // Draw Glowing Blade Trail
+        function drawTrail() {
+            trailCtx.clearRect(0, 0, trailCanvas.width, trailCanvas.height);
+            const now = Date.now();
+            trailPoints = trailPoints.filter(p => now - p.time < 180);
+
+            if (trailPoints.length < 2) return;
+
+            trailCtx.beginPath();
+            trailCtx.moveTo(trailPoints[0].x, trailPoints[0].y);
+            for (let i = 1; i < trailPoints.length; i++) {
+                trailCtx.lineTo(trailPoints[i].x, trailPoints[i].y);
+            }
+            trailCtx.strokeStyle = '#38bdf8';
+            trailCtx.lineWidth = 10;
+            trailCtx.lineCap = 'round';
+            trailCtx.lineJoin = 'round';
+            trailCtx.shadowBlur = 18;
+            trailCtx.shadowColor = '#0284c7';
+            trailCtx.stroke();
+
+            // Inner bright core
+            trailCtx.beginPath();
+            trailCtx.moveTo(trailPoints[0].x, trailPoints[0].y);
+            for (let i = 1; i < trailPoints.length; i++) {
+                trailCtx.lineTo(trailPoints[i].x, trailPoints[i].y);
+            }
+            trailCtx.strokeStyle = '#ffffff';
+            trailCtx.lineWidth = 4;
+            trailCtx.stroke();
+        }
+
+        // --- Balanced, Smooth Floaty Physics with Delta Time Normalization ---
+        let lastTimestamp = 0;
+        let lastSpawn = 0;
+        const TARGET_FRAME_MS = 1000 / 60; // 16.67ms base
+        const GRAVITY_PER_SEC = 0.20; // Natural, floaty gravity
+
+        function animate(timestamp) {
+            requestAnimationFrame(animate);
+
+            if (!lastTimestamp) lastTimestamp = timestamp;
+            const deltaMs = Math.min(timestamp - lastTimestamp, 50); // cap max delta to prevent teleporting
+            lastTimestamp = timestamp;
+            const timeScale = deltaMs / TARGET_FRAME_MS; // 1.0 at 60fps, 0.5 at 120fps
+
+            // Spawning fruits in balanced, paced intervals (1.6 - 2.2s)
+            if (gameActive && timestamp - lastSpawn > 1800) {
+                lastSpawn = timestamp;
+                const count = Math.random() < 0.35 ? 2 : 1; // 1 to 2 fruits per wave
+                for (let i = 0; i < count; i++) {
+                    setTimeout(spawnFruit, i * 360);
+                }
+            }
+
+            // Update fruit physics normalized by timeScale
+            activeFruits.forEach(fruit => {
+                fruit.vy -= (GRAVITY_PER_SEC / 60) * timeScale;
+                fruit.x += fruit.vx * timeScale;
+                fruit.y += fruit.vy * timeScale;
+
+                fruit.mesh.position.set(fruit.x, fruit.y, 0);
+                fruit.mesh.rotation.x += fruit.rot.x * timeScale;
+                fruit.mesh.rotation.y += fruit.rot.y * timeScale;
+                fruit.mesh.rotation.z += fruit.rot.z * timeScale;
+
+                // Check dropped fruit penalty
+                if (!fruit.isSliced && !fruit.def.isBomb && fruit.y < -7.0 && fruit.vy < 0) {
+                    fruit.isSliced = true;
+                    if (gameMode === 'classic' || gameMode === 'tournament') {
+                        loseLife();
+                    }
+                }
+            });
+
+            // Clean up fallen fruits
+            activeFruits = activeFruits.filter(fruit => {
+                if (fruit.y < -8.5) {
+                    scene.remove(fruit.mesh);
+                    return false;
+                }
+                return true;
+            });
+
+            drawTrail();
+            renderer.render(scene, camera);
+        }
+
+        restartGame();
+        requestAnimationFrame(animate);
+    </script>
+</body>
+</html>

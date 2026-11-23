@@ -1,0 +1,1278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>War Land - 3D Battle Royale</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            margin: 0;
+            padding: 0;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            touch-action: none;
+        }
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #gameCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+            z-index: 1;
+        }
+
+        /* Camera Touch Pan Zone on Right Half */
+        #cameraZone {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 65vw;
+            height: 100vh;
+            z-index: 2;
+        }
+
+        /* Plane Jump & Skydiving HUD */
+        #planeFlightHud {
+            position: absolute;
+            top: 22%;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            z-index: 50;
+            pointer-events: auto;
+            text-align: center;
+        }
+        .plane-flight-title {
+            color: #FACC15;
+            font-size: 16px;
+            font-weight: 900;
+            letter-spacing: 2px;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.8), 0 0 15px rgba(245, 158, 11, 0.6);
+            background: rgba(15, 23, 42, 0.85);
+            padding: 6px 18px;
+            border-radius: 20px;
+            border: 1.5px solid #F59E0B;
+        }
+        .plane-jump-btn {
+            background: linear-gradient(135deg, #EF4444, #DC2626);
+            color: #FFF;
+            font-size: 20px;
+            font-weight: 900;
+            padding: 14px 38px;
+            border-radius: 36px;
+            border: 2.5px solid #FACC15;
+            box-shadow: 0 0 24px rgba(239, 68, 68, 0.8), 0 6px 16px rgba(0,0,0,0.6);
+            cursor: pointer;
+            animation: pulseJumpBtn 1.2s infinite alternate;
+            letter-spacing: 1.5px;
+        }
+        @keyframes pulseJumpBtn {
+            0% { transform: scale(1.0); box-shadow: 0 0 15px rgba(239, 68, 68, 0.6); }
+            100% { transform: scale(1.08); box-shadow: 0 0 30px rgba(250, 204, 21, 0.9); }
+        }
+        .plane-jump-btn:active {
+            transform: scale(0.95);
+        }
+        #chuteDeployHud {
+            position: absolute;
+            bottom: 25%;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            z-index: 50;
+            pointer-events: auto;
+        }
+        .chute-deploy-btn {
+            background: linear-gradient(135deg, #0284C7, #0369A1);
+            color: #FFF;
+            font-size: 18px;
+            font-weight: 900;
+            padding: 12px 32px;
+            border-radius: 30px;
+            border: 2px solid #38BDF8;
+            box-shadow: 0 0 20px rgba(56, 189, 248, 0.7);
+            cursor: pointer;
+            letter-spacing: 1px;
+        }
+        .chute-deploy-btn:active {
+            transform: scale(0.95);
+        }
+        .alt-speed-meter {
+            color: #FFF;
+            font-size: 13px;
+            font-weight: 800;
+            background: rgba(15, 23, 42, 0.75);
+            padding: 4px 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.2);
+            text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+        }
+
+        /* Top Bar Status Ribbon */
+        #topBar {
+            position: absolute;
+            top: 12px;
+            left: 16px;
+            right: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 10;
+            pointer-events: none;
+        }
+        .top-left-group {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            pointer-events: auto;
+        }
+        .profile-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(15, 23, 42, 0.85);
+            padding: 4px 12px 4px 4px;
+            border-radius: 24px;
+            border: 1.5px solid #F59E0B;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+        .profile-badge img {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 1.5px solid #F59E0B;
+        }
+        .player-ign {
+            color: #FFF;
+            font-size: 13px;
+            font-weight: 700;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+        }
+        .match-stats-pill {
+            display: flex;
+            background: rgba(15, 23, 42, 0.9);
+            border-radius: 18px;
+            border: 1.5px solid rgba(255,255,255,0.2);
+            overflow: hidden;
+            font-weight: 800;
+            font-size: 13px;
+        }
+        .stat-alive {
+            background: #0284C7;
+            color: #FFF;
+            padding: 4px 12px;
+        }
+        .stat-kills {
+            background: #DC2626;
+            color: #FFF;
+            padding: 4px 12px;
+        }
+        .top-right-group {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            pointer-events: auto;
+        }
+        .top-btn {
+            background: rgba(15, 23, 42, 0.85);
+            color: #FFF;
+            border: 1.5px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            width: 38px;
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+        }
+        .top-btn:active {
+            transform: scale(0.92);
+        }
+
+        /* Minimap Container (Top-Right) */
+        #minimapWrapper {
+            position: absolute;
+            top: 58px;
+            right: 16px;
+            z-index: 10;
+            border-radius: 50%;
+            overflow: hidden;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.7);
+            border: 2px solid #F59E0B;
+            pointer-events: auto;
+        }
+        #minimapCanvas {
+            display: block;
+            width: 110px;
+            height: 110px;
+        }
+
+        /* Bottom Health & Armor Bar */
+        #healthArmorContainer {
+            position: absolute;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            width: 260px;
+            z-index: 10;
+            pointer-events: none;
+        }
+        .bar-wrapper {
+            position: relative;
+            height: 12px;
+            background: rgba(15, 23, 42, 0.85);
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.25);
+        }
+        .bar-fill {
+            height: 100%;
+            width: 100%;
+            transition: width 0.15s ease;
+        }
+        #hpFill {
+            background: linear-gradient(90deg, #EF4444, #22C55E);
+        }
+        #armorFill {
+            background: linear-gradient(90deg, #3B82F6, #60A5FA);
+        }
+        .bar-label {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 9px;
+            font-weight: 800;
+            color: #FFF;
+            text-shadow: 0 1px 2px #000;
+        }
+
+        /* Left Virtual Joystick Zone (Permanent Mobile Tactile Controller) */
+        #joystickZone {
+            position: absolute;
+            bottom: 25px;
+            left: 25px;
+            width: 150px;
+            height: 150px;
+            z-index: 20;
+            pointer-events: auto;
+            touch-action: none;
+            user-select: none;
+            cursor: grab;
+        }
+        #joystickZone:active {
+            cursor: grabbing;
+        }
+        #joystickBase {
+            position: absolute;
+            width: 120px;
+            height: 120px;
+            top: 15px;
+            left: 15px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(30, 41, 59, 0.65) 0%, rgba(15, 23, 42, 0.9) 75%);
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            box-shadow: 0 0 16px rgba(0, 0, 0, 0.7), inset 0 0 12px rgba(255, 255, 255, 0.12);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+        }
+        /* Directional guide markings */
+        #joystickBase::before {
+            content: '▲';
+            position: absolute;
+            top: 6px;
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.6);
+            font-weight: 900;
+        }
+        #joystickBase::after {
+            content: '▼';
+            position: absolute;
+            bottom: 6px;
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.6);
+            font-weight: 900;
+        }
+        #joystickThumb {
+            position: absolute;
+            width: 52px;
+            height: 52px;
+            top: 49px;
+            left: 49px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 35% 35%, #FBBF24 0%, #D97706 60%, #B45309 100%);
+            border: 2px solid #FFF;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5), 0 0 14px rgba(245, 158, 11, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+            transition: transform 0.05s ease-out;
+        }
+        #joystickThumb::after {
+            content: '🕹️';
+            font-size: 18px;
+            opacity: 0.9;
+        }
+
+        /* Right Side Combat Buttons (Free Fire Style HUD) */
+        .hud-action-btn {
+            position: absolute;
+            border-radius: 50%;
+            background: rgba(15, 23, 42, 0.75);
+            border: 2px solid rgba(255,255,255,0.35);
+            color: #FFF;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            cursor: pointer;
+            z-index: 15;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            pointer-events: auto;
+        }
+        .hud-action-btn:active, .hud-action-btn.active {
+            transform: scale(0.92);
+            border-color: #F59E0B;
+            background: rgba(245, 158, 11, 0.3);
+        }
+
+        /* Primary Large Fire Button */
+        #btnFire {
+            bottom: 30px;
+            right: 40px;
+            width: 76px;
+            height: 76px;
+            background: radial-gradient(circle, rgba(220,38,38,0.8) 0%, rgba(15,23,42,0.9) 100%);
+            border: 3px solid #EF4444;
+            font-size: 28px;
+            box-shadow: 0 0 18px rgba(239,68,68,0.6);
+        }
+
+        /* Scope Toggle Button */
+        #btnScope {
+            bottom: 120px;
+            right: 48px;
+            width: 56px;
+            height: 56px;
+            font-size: 22px;
+            border-color: #38BDF8;
+        }
+
+        /* Mobility Cluster */
+        #btnJump {
+            bottom: 110px;
+            right: 125px;
+            width: 54px;
+            height: 54px;
+            font-size: 20px;
+        }
+        #btnCrouch {
+            bottom: 45px;
+            right: 135px;
+            width: 50px;
+            height: 50px;
+            font-size: 18px;
+        }
+        #btnProne {
+            bottom: 25px;
+            right: 198px;
+            width: 46px;
+            height: 46px;
+            font-size: 16px;
+        }
+        #btnSprint {
+            bottom: 180px;
+            left: 50px;
+            width: 48px;
+            height: 48px;
+            font-size: 18px;
+        }
+
+        /* Slide Button — new! */
+        #btnSlide {
+            bottom: 115px;
+            left: 50px;
+            width: 52px;
+            height: 52px;
+            font-size: 20px;
+            background: rgba(6, 182, 212, 0.65);
+            border-color: #22D3EE;
+            box-shadow: 0 0 10px rgba(34, 211, 238, 0.5);
+        }
+        #btnSlide.active {
+            background: rgba(6, 182, 212, 0.9);
+            border-color: #FACC15;
+            box-shadow: 0 0 18px rgba(250, 204, 21, 0.8);
+        }
+        /* Sprint active glow */
+        #btnSprint.active {
+            background: rgba(234, 179, 8, 0.75);
+            border-color: #FACC15;
+            box-shadow: 0 0 14px rgba(250, 204, 21, 0.7);
+        }
+
+        /* Reload, Grenade & Medkit */
+        #btnReload {
+            bottom: 175px;
+            right: 105px;
+            width: 48px;
+            height: 48px;
+            font-size: 18px;
+        }
+        #btnGrenade {
+            bottom: 95px;
+            right: 195px;
+            width: 48px;
+            height: 48px;
+            font-size: 18px;
+        }
+        #btnGlooWall {
+            bottom: 165px;
+            right: 195px;
+            width: 52px;
+            height: 52px;
+            font-size: 20px;
+            background: rgba(6, 182, 212, 0.75);
+            border-color: #06B6D4;
+            box-shadow: 0 0 12px rgba(6, 182, 212, 0.8);
+        }
+        #glooCountBadge,
+        #grenadeCountBadge {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            background: #EF4444;
+            color: #FFF;
+            font-size: 11px;
+            font-weight: 800;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #FFF;
+        }
+        .desktop-hint {
+            position: absolute;
+            bottom: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 23, 42, 0.85);
+            padding: 4px 14px;
+            border-radius: 16px;
+            color: #E2E8F0;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            pointer-events: none;
+            z-index: 12;
+            white-space: nowrap;
+        }
+        #btnMedkit {
+            bottom: 45px;
+            left: 215px;
+            width: 50px;
+            height: 50px;
+            font-size: 20px;
+            background: rgba(16, 185, 129, 0.7);
+            border-color: #10B981;
+        }
+
+        /* Weapon Quick Switch Strip */
+        #weaponStrip {
+            position: absolute;
+            top: 14px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 8px;
+            z-index: 10;
+            pointer-events: auto;
+        }
+        .weapon-slot {
+            background: rgba(15, 23, 42, 0.85);
+            border: 1.5px solid rgba(255,255,255,0.25);
+            border-radius: 8px;
+            padding: 4px 10px;
+            color: #CBD5E1;
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .weapon-slot.active-slot {
+            border-color: #F59E0B;
+            background: rgba(245, 158, 11, 0.25);
+            color: #F59E0B;
+        }
+
+        /* Ammo Info Badge */
+        #ammoBadge {
+            position: absolute;
+            bottom: 42px;
+            right: 255px;
+            background: rgba(15, 23, 42, 0.85);
+            border: 1.5px solid rgba(255,255,255,0.3);
+            border-radius: 8px;
+            padding: 4px 10px;
+            color: #FFF;
+            font-size: 14px;
+            font-weight: 800;
+            z-index: 10;
+            pointer-events: none;
+        }
+        #ammoInMag {
+            font-size: 18px;
+            color: #FACC15;
+        }
+
+        /* Emote Wheel Button & Circular Menu */
+        #btnEmoteWheel {
+            bottom: 105px;
+            left: 215px;
+            width: 48px;
+            height: 48px;
+            font-size: 18px;
+        }
+        #emoteWheel {
+            position: absolute;
+            bottom: 165px;
+            left: 175px;
+            display: flex;
+            gap: 10px;
+            background: rgba(15, 23, 42, 0.95);
+            padding: 8px 14px;
+            border-radius: 24px;
+            border: 2px solid #F59E0B;
+            z-index: 25;
+            box-shadow: 0 4px 18px rgba(0,0,0,0.7);
+        }
+        .emote-option {
+            background: rgba(255,255,255,0.1);
+            border: 1.5px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            width: 42px;
+            height: 42px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            cursor: pointer;
+        }
+        .emote-option:active {
+            transform: scale(0.9);
+            border-color: #F59E0B;
+        }
+
+        /* Kill Feed Top Center */
+        #killFeed {
+            position: absolute;
+            top: 55px;
+            left: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            z-index: 10;
+            pointer-events: none;
+        }
+        .kill-feed-item {
+            background: rgba(15, 23, 42, 0.85);
+            border-left: 3px solid #EF4444;
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            color: #FFF;
+            font-weight: 700;
+            animation: fadeIn 0.3s ease;
+        }
+        .kill-feed-item .killer { color: #38BDF8; }
+        .kill-feed-item .victim { color: #FCA5A5; }
+
+        /* Dynamic Tactical Combat Crosshair & AI Aim Lock */
+        #combatCrosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 48px;
+            height: 48px;
+            pointer-events: none;
+            z-index: 25;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.15s ease;
+        }
+        #combatCrosshair.hidden {
+            display: none !important;
+        }
+        .reticle-dot {
+            width: 4px;
+            height: 4px;
+            background: #38BDF8;
+            border-radius: 50%;
+            box-shadow: 0 0 5px #0284C7;
+            transition: background 0.12s ease, transform 0.12s ease;
+        }
+        .reticle-line {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
+            border-radius: 1px;
+            transition: transform 0.08s ease, background 0.12s ease;
+        }
+        .reticle-top {
+            width: 2px;
+            height: 9px;
+            top: 6px;
+            transform-origin: center top;
+        }
+        .reticle-bottom {
+            width: 2px;
+            height: 9px;
+            bottom: 6px;
+            transform-origin: center bottom;
+        }
+        .reticle-left {
+            width: 9px;
+            height: 2px;
+            left: 6px;
+            transform-origin: left center;
+        }
+        .reticle-right {
+            width: 9px;
+            height: 2px;
+            right: 6px;
+            transform-origin: right center;
+        }
+        /* Tactical AI Target Box (Aim Acquisition Box) */
+        .reticle-box {
+            position: absolute;
+            width: 28px;
+            height: 28px;
+            border: 1.5px dashed rgba(56, 189, 248, 0.45);
+            border-radius: 4px;
+            opacity: 0;
+            transform: scale(1.3);
+            transition: all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        /* Dynamic Spread states */
+        #combatCrosshair.spread-moving .reticle-top { transform: translateY(-7px); }
+        #combatCrosshair.spread-moving .reticle-bottom { transform: translateY(7px); }
+        #combatCrosshair.spread-moving .reticle-left { transform: translateX(-7px); }
+        #combatCrosshair.spread-moving .reticle-right { transform: translateX(7px); }
+
+        #combatCrosshair.spread-firing .reticle-top { transform: translateY(-13px); }
+        #combatCrosshair.spread-firing .reticle-bottom { transform: translateY(13px); }
+        #combatCrosshair.spread-firing .reticle-left { transform: translateX(-13px); }
+        #combatCrosshair.spread-firing .reticle-right { transform: translateX(13px); }
+
+        #combatCrosshair.crouch-tight .reticle-top { transform: translateY(2px); }
+        #combatCrosshair.crouch-tight .reticle-bottom { transform: translateY(-2px); }
+        #combatCrosshair.crouch-tight .reticle-left { transform: translateX(2px); }
+        #combatCrosshair.crouch-tight .reticle-right { transform: translateX(-2px); }
+
+        /* Target Acquired / Locked on Enemy Bot: GLOWING RED! */
+        #combatCrosshair.target-locked .reticle-dot {
+            background: #EF4444;
+            transform: scale(1.6);
+            box-shadow: 0 0 10px #EF4444;
+        }
+        #combatCrosshair.target-locked .reticle-line {
+            background: #EF4444;
+            box-shadow: 0 0 6px rgba(239, 68, 68, 0.95);
+        }
+        #combatCrosshair.target-locked .reticle-box {
+            opacity: 1;
+            transform: scale(1.0);
+            border: 1.5px solid #EF4444;
+            box-shadow: 0 0 12px rgba(239, 68, 68, 0.7);
+            animation: reticlePulse 0.4s infinite alternate;
+        }
+        @keyframes reticlePulse {
+            0% { transform: scale(1.0); opacity: 0.85; }
+            100% { transform: scale(1.1); opacity: 1; }
+        }
+
+        /* Melee Fists Reticle Mode */
+        #combatCrosshair.melee-mode .reticle-line,
+        #combatCrosshair.melee-mode .reticle-box {
+            display: none;
+        }
+        #combatCrosshair.melee-mode .reticle-dot {
+            width: 6px;
+            height: 6px;
+            background: #F59E0B;
+            box-shadow: 0 0 6px #F59E0B;
+        }
+
+        /* Sniper Scope Overlay */
+        #scopeOverlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, transparent 38%, rgba(0,0,0,0.92) 42%, #000 80%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+            pointer-events: none;
+        }
+        .crosshair-h {
+            position: absolute;
+            width: 100%;
+            height: 1.5px;
+            background: rgba(239, 68, 68, 0.85);
+        }
+        .crosshair-v {
+            position: absolute;
+            height: 100%;
+            width: 1.5px;
+            background: rgba(239, 68, 68, 0.85);
+        }
+        .scope-dot {
+            position: absolute;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #EF4444;
+            box-shadow: 0 0 6px #EF4444;
+        }
+
+        /* Spectator Mode Banner */
+        #spectateBanner {
+            position: absolute;
+            top: 85px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 23, 42, 0.9);
+            border: 1.5px solid #F59E0B;
+            border-radius: 20px;
+            padding: 6px 18px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            z-index: 25;
+            color: #FFF;
+            font-size: 13px;
+            font-weight: 700;
+        }
+        .spectate-nav-btn {
+            background: #D97706;
+            color: #FFF;
+            border: none;
+            border-radius: 12px;
+            padding: 4px 10px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        /* Settings & Match Over Modals */
+        .game-modal {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.75);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 30;
+        }
+        .modal-card {
+            background: #0F172A;
+            border: 2px solid #F59E0B;
+            border-radius: 16px;
+            padding: 24px;
+            width: 90%;
+            max-width: 440px;
+            color: #FFF;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.8);
+            text-align: center;
+        }
+        .modal-card h2 {
+            font-size: 22px;
+            color: #F59E0B;
+            margin-bottom: 8px;
+        }
+        .modal-card p {
+            color: #94A3B8;
+            font-size: 13px;
+            margin-bottom: 18px;
+        }
+        .coins-won-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #F59E0B, #D97706);
+            color: #000;
+            font-weight: 800;
+            font-size: 16px;
+            padding: 8px 20px;
+            border-radius: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 14px rgba(245,158,11,0.5);
+        }
+        .modal-btn {
+            width: 100%;
+            background: #F59E0B;
+            color: #000;
+            border: none;
+            padding: 12px;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 800;
+            cursor: pointer;
+            margin-top: 8px;
+        }
+        .modal-btn.secondary {
+            background: rgba(255,255,255,0.1);
+            color: #FFF;
+        }
+
+        .settings-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+            font-size: 13px;
+        }
+        .settings-row input[type="range"] {
+            width: 160px;
+        }
+
+        .hidden { display: none !important; }
+        .customizing-border {
+            border: 2px dashed #FACC15 !important;
+            animation: pulseBorder 1s infinite alternate;
+        }
+        @keyframes pulseBorder {
+            from { border-color: #FACC15; }
+            to { border-color: #EF4444; }
+        }
+
+        /* Parachute Deployment Button */
+        #btnDeployChute {
+            position: absolute;
+            bottom: 125px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(135deg, #F59E0B, #EA580C);
+            color: #FFF;
+            border: 2px solid #FEF08A;
+            font-size: 15px;
+            font-weight: 800;
+            padding: 12px 26px;
+            border-radius: 28px;
+            box-shadow: 0 4px 20px rgba(245, 158, 11, 0.7);
+            cursor: pointer;
+            z-index: 25;
+            animation: pulseChute 1.2s infinite alternate;
+            letter-spacing: 0.5px;
+        }
+        @keyframes pulseChute {
+            from { transform: translateX(-50%) scale(1); }
+            to { transform: translateX(-50%) scale(1.06); }
+        }
+
+        /* Game Shop Modal & Tabs */
+        .shop-card {
+            max-width: 500px;
+            text-align: left;
+        }
+        .shop-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .coins-display {
+            background: #1E293B;
+            border: 1.5px solid #F59E0B;
+            border-radius: 16px;
+            padding: 4px 12px;
+            font-weight: 800;
+            font-size: 14px;
+            color: #FACC15;
+        }
+        .shop-subtitle {
+            margin-bottom: 14px;
+            font-size: 12px;
+            color: #94A3B8;
+        }
+        .shop-tabs {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 14px;
+            border-bottom: 1px solid rgba(255,255,255,0.15);
+            padding-bottom: 8px;
+        }
+        .shop-tab {
+            flex: 1;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.15);
+            color: #94A3B8;
+            padding: 7px 4px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 11px;
+            cursor: pointer;
+            text-align: center;
+        }
+        .shop-tab.active {
+            background: rgba(245, 158, 11, 0.25);
+            border-color: #F59E0B;
+            color: #F59E0B;
+        }
+        .shop-content-pane {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 280px;
+            overflow-y: auto;
+        }
+        .shop-item-card {
+            display: flex;
+            align-items: center;
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 10px;
+            padding: 10px 14px;
+            gap: 12px;
+        }
+        .shop-item-card .item-icon {
+            font-size: 26px;
+            width: 40px;
+            text-align: center;
+        }
+        .shop-item-card .item-details {
+            flex: 1;
+        }
+        .shop-item-card .item-name {
+            font-weight: 800;
+            font-size: 13px;
+            color: #FFF;
+        }
+        .shop-item-card .item-desc {
+            font-size: 11px;
+            color: #94A3B8;
+        }
+        .shop-buy-btn {
+            background: #F59E0B;
+            color: #000;
+            border: none;
+            font-weight: 800;
+            font-size: 12px;
+            padding: 6px 14px;
+            border-radius: 14px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .shop-buy-btn.equipped {
+            background: #22C55E;
+            color: #FFF;
+        }
+        .weapon-slot.empty-slot {
+            opacity: 0.55;
+            border-style: dashed;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+        <div id="cameraZone"></div>
+
+        <!-- Top Bar Ribbon -->
+        <div id="topBar">
+            <div class="top-left-group">
+                <div class="profile-badge">
+                    <img id="playerProfileImg" src="https://api.dicebear.com/7.x/bottts/svg?seed=WarLand" alt="Avatar">
+                    <span id="playerIgnDisplay" class="player-ign">Warrior_Pro</span>
+                </div>
+                <div class="match-stats-pill">
+                    <span class="stat-alive">ALIVE <span id="aliveText">26</span></span>
+                    <span class="stat-kills">KILL <span id="killText">0</span></span>
+                </div>
+            </div>
+
+            <!-- Weapon Quick Switch Strip (Max 3 Guns: 2 Primary + 1 Pistol + Fists) -->
+            <div id="weaponStrip">
+                <div id="slot0" class="weapon-slot active-slot">🥊 FISTS</div>
+                <div id="slot1" class="weapon-slot empty-slot">EMPTY 1</div>
+                <div id="slot2" class="weapon-slot empty-slot">EMPTY 2</div>
+                <div id="slot3" class="weapon-slot empty-slot">PISTOL</div>
+            </div>
+
+            <div class="top-right-group">
+                <button id="btnWeather" class="top-btn" title="Toggle Weather">☀️</button>
+                <!-- Game shop moved to main menu / game section as requested -->
+                <button id="btnSettings" class="top-btn" title="Settings">⚙️</button>
+                <button id="btnExit" class="top-btn" onclick="window.exitGameToArena()" title="Exit">✕</button>
+            </div>
+        </div>
+
+        <!-- Plane Flight & Jump Banner -->
+        <div id="planeFlightHud" class="hidden">
+            <div class="plane-flight-title">✈️ AIRDROP FLIGHT OVER WARLAND</div>
+            <button id="btnPlaneJump" class="plane-jump-btn">🪂 JUMP / EJECT</button>
+            <div class="alt-speed-meter">Altitude: <span id="planeAltText">180m</span> | Press <kbd>SPACE</kbd> or Tap Jump</div>
+        </div>
+
+        <!-- Parachute Deploy Action Button -->
+        <div id="chuteDeployHud" class="hidden">
+            <button id="btnDeployChute" class="chute-deploy-btn">🪂 OPEN PARACHUTE</button>
+            <div class="alt-speed-meter">Altitude: <span id="skydiveAltText">120m</span> | Auto-opens at 35m</div>
+        </div>
+
+        <!-- Radar Minimap -->
+        <div id="minimapWrapper">
+            <canvas id="minimapCanvas" width="110" height="110"></canvas>
+        </div>
+
+        <!-- Kill Feed Banner -->
+        <div id="killFeed"></div>
+
+        <!-- Spectator Banner -->
+        <div id="spectateBanner" class="hidden">
+            <button id="btnSpectatePrev" class="spectate-nav-btn">◀</button>
+            <span id="spectateTargetName">Spectating...</span>
+            <button id="btnSpectateNext" class="spectate-nav-btn">▶</button>
+        </div>
+
+        <!-- Bottom Health & Armor Bars -->
+        <div id="healthArmorContainer">
+            <div class="bar-wrapper">
+                <div id="armorFill" class="bar-fill"></div>
+                <span id="armorText" class="bar-label">100 / 100</span>
+            </div>
+            <div class="bar-wrapper">
+                <div id="hpFill" class="bar-fill"></div>
+                <span id="hpText" class="bar-label">200 / 200</span>
+            </div>
+        </div>
+
+        <!-- Left Virtual Joystick -->
+        <div id="joystickZone">
+            <div id="joystickBase"></div>
+            <div id="joystickThumb"></div>
+        </div>
+
+        <!-- Ammo Count Indicator -->
+        <div id="ammoBadge">
+            <span id="weaponName">AK-47</span> | <span id="ammoInMag">30</span> / <span id="ammoReserve">90</span>
+        </div>
+
+        <!-- Free Fire Style Combat Action Buttons -->
+        <button id="btnFire" class="hud-action-btn hud-draggable" title="Fire">🎯</button>
+        <button id="btnScope" class="hud-action-btn hud-draggable" title="Scope Aim">🔭</button>
+        <button id="btnJump" class="hud-action-btn hud-draggable" title="Jump">🦘</button>
+        <button id="btnCrouch" class="hud-action-btn hud-draggable" title="Crouch">🧎</button>
+        <button id="btnProne" class="hud-action-btn hud-draggable" title="Prone">🛌</button>
+        <button id="btnSprint" class="hud-action-btn hud-draggable" title="Sprint">🏃</button>
+        <button id="btnSlide" class="hud-action-btn hud-draggable" title="Slide (X / Ctrl)">🌊</button>
+        <button id="btnReload" class="hud-action-btn hud-draggable" title="Reload">🔄</button>
+        <button id="btnGrenade" class="hud-action-btn hud-draggable" title="Grenade (T)">💣<span id="grenadeCountBadge">3</span></button>
+        <button id="btnGlooWall" class="hud-action-btn hud-draggable" title="Gloo Wall (G)">🛡️<span id="glooCountBadge">3</span></button>
+        <button id="btnMedkit" class="hud-action-btn hud-draggable" title="Medkit (H)">➕</button>
+        <button id="btnEmoteWheel" class="hud-action-btn hud-draggable" title="Emotes">🎭</button>
+
+        <!-- Dynamic Tactical Combat Reticle & Aim Lock (AI Box / Crosshair) -->
+        <div id="combatCrosshair" class="tactical-crosshair">
+            <div class="reticle-dot"></div>
+            <div class="reticle-line reticle-top"></div>
+            <div class="reticle-line reticle-bottom"></div>
+            <div class="reticle-line reticle-left"></div>
+            <div class="reticle-line reticle-right"></div>
+            <div class="reticle-box"></div>
+        </div>
+
+        <!-- Desktop Controls Quick Guide -->
+        <div id="desktopControlsRibbon" class="desktop-hint">🖱️ Click Canvas to Lock Mouse Look | WASD: Move | Left-Click: Fire | Right-Click: Scope | G: Gloo Wall | Shift: Sprint | Space: Jump | R: Reload</div>
+
+        <!-- Emote Wheel Circular Menu -->
+        <div id="emoteWheel" class="hidden">
+            <button class="emote-option" data-emote="emote_wave" title="Wave">👋</button>
+            <button class="emote-option" data-emote="emote_heart" title="Love">❤️</button>
+            <button class="emote-option" data-emote="emote_laugh" title="Laugh">😂</button>
+            <button class="emote-option" data-emote="emote_dance" title="Dance">🕺</button>
+        </div>
+
+        <!-- Sniper Scope Overlay -->
+        <div id="scopeOverlay" class="hidden">
+            <div class="crosshair-h"></div>
+            <div class="crosshair-v"></div>
+            <div class="scope-dot"></div>
+        </div>
+
+        <!-- In-Game Settings Modal -->
+        <div id="settingsModal" class="game-modal hidden">
+            <div class="modal-card">
+                <h2>Game Settings</h2>
+                <div class="settings-row">
+                    <span>Look Sensitivity</span>
+                    <input id="sensSlider" type="range" min="10" max="100" value="50">
+                </div>
+                <div class="settings-row">
+                    <span>Master Audio</span>
+                    <input id="volSlider" type="range" min="0" max="100" value="80">
+                </div>
+                <button id="btnCustomizeHud" class="modal-btn secondary">Customize HUD Buttons</button>
+                <button id="btnCloseSettings" class="modal-btn">Close Settings</button>
+            </div>
+        </div>
+
+        <!-- WarLand In-Game Shop Modal -->
+        <div id="shopModal" class="game-modal hidden">
+            <div class="modal-card shop-card">
+                <div class="shop-header">
+                    <h2>🛒 WARLAND GAME SHOP</h2>
+                    <div class="coins-display">💰 <span id="shopCoinsVal">250</span> Coins</div>
+                </div>
+                <p class="shop-subtitle">Upgrade Melee Punch Power, Tactical Shields & Skins</p>
+                
+                <div class="shop-tabs">
+                    <button class="shop-tab active" data-tab="tabMelee">🥊 PUNCH POWER</button>
+                    <button class="shop-tab" data-tab="tabShields">🛡️ SHIELDS & AMMO</button>
+                    <button class="shop-tab" data-tab="tabSkins">👤 SKINS</button>
+                </div>
+
+                <div id="tabMelee" class="shop-content-pane">
+                    <div class="shop-item-card">
+                        <div class="item-icon">🥊</div>
+                        <div class="item-details">
+                            <div class="item-name">Iron Fist (Lv. 1)</div>
+                            <div class="item-desc">+10 Damage (35 Total). Solid metallic jab.</div>
+                        </div>
+                        <button class="shop-buy-btn" data-type="punch" data-id="iron_fist" data-cost="50">50 💰</button>
+                    </div>
+                    <div class="shop-item-card">
+                        <div class="item-icon">⚡</div>
+                        <div class="item-details">
+                            <div class="item-name">Cyber Knuckle (Lv. 2)</div>
+                            <div class="item-desc">+25 Damage (50 Total). High voltage kinetic shock.</div>
+                        </div>
+                        <button class="shop-buy-btn" data-type="punch" data-id="cyber_knuckle" data-cost="100">100 💰</button>
+                    </div>
+                    <div class="shop-item-card">
+                        <div class="item-icon">🔥</div>
+                        <div class="item-details">
+                            <div class="item-name">Golden God Fist (Lv. 3)</div>
+                            <div class="item-desc">+50 Damage (75 Total). Explosive knockout blast!</div>
+                        </div>
+                        <button class="shop-buy-btn" data-type="punch" data-id="god_fist" data-cost="200">200 💰</button>
+                    </div>
+                </div>
+
+                <div id="tabShields" class="shop-content-pane hidden">
+                    <div class="shop-item-card">
+                        <div class="item-icon">🛡️</div>
+                        <div class="item-details">
+                            <div class="item-name">+3 Free Fire Gloo Walls</div>
+                            <div class="item-desc">Instant deployable ballistic ice barrier.</div>
+                        </div>
+                        <button class="shop-buy-btn" data-type="gloo" data-cost="40">40 💰</button>
+                    </div>
+                    <div class="shop-item-card">
+                        <div class="item-icon">📦</div>
+                        <div class="item-details">
+                            <div class="item-name">Tactical Ammo Cache</div>
+                            <div class="item-desc">+120 Reserve rounds for all weapons.</div>
+                        </div>
+                        <button class="shop-buy-btn" data-type="ammo" data-cost="30">30 💰</button>
+                    </div>
+                </div>
+
+                <div id="tabSkins" class="shop-content-pane hidden">
+                    <div class="shop-item-card">
+                        <div class="item-icon">⚡</div>
+                        <div class="item-details">
+                            <div class="item-name">Freya Tactical (High-Tech Agent)</div>
+                            <div class="item-desc">Elite tactical operative with customized combat rig. [Equipped]</div>
+                        </div>
+                        <button class="shop-buy-btn" data-type="skin" data-id="freya" data-cost="0" style="background:#10B981;">EQUIPPED</button>
+                    </div>
+                    <div class="shop-item-card">
+                        <div class="item-icon">🎯</div>
+                        <div class="item-details">
+                            <div class="item-name">Asian Tactical Specialist</div>
+                            <div class="item-desc">Stealth assault combat operative.</div>
+                        </div>
+                        <button class="shop-buy-btn" data-type="skin" data-id="asian" data-cost="0">EQUIP</button>
+                    </div>
+                    <div class="shop-item-card">
+                        <div class="item-icon">🕶️</div>
+                        <div class="item-details">
+                            <div class="item-name">Agent Sophia (Recon)</div>
+                            <div class="item-desc">Tactical recon & intelligence specialist.</div>
+                        </div>
+                        <button class="shop-buy-btn" data-type="skin" data-id="sophia" data-cost="0">EQUIP</button>
+                    </div>
+                </div>
+
+                <button id="btnCloseShop" class="modal-btn" style="margin-top: 14px;">Close Shop</button>
+            </div>
+        </div>
+
+        <!-- Match Over / Booyah! Modal -->
+        <div id="matchOverModal" class="game-modal hidden">
+            <div class="modal-card">
+                <h2 id="matchOutcomeTitle">BOOYAH! #1 CHAMPION</h2>
+                <p id="matchOutcomeDesc">Total Kills: 0 • Mode: Battle Royale</p>
+                <div id="coinsWonBadge" class="coins-won-badge">+50 Game Coins Earned!</div>
+                <button class="modal-btn" onclick="window.exitGameToArena()">Return to Game Arena</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Core Three.js Engine Scripts -->
+    <script src="js/three.min.js"></script>
+    <script src="js/GLTFLoader.js"></script>
+    <script src="js/animation_system.js?v=14"></script>
+    <script src="js/assets_loader.js?v=14"></script>
+    <script src="js/sounds.js?v=14"></script>
+    <script src="js/weapons.js?v=14"></script>
+    <script src="js/map.js?v=14"></script>
+    <script src="js/weather.js?v=14"></script>
+    <script src="js/player.js?v=14"></script>
+    <script src="js/bot_ai.js?v=14"></script>
+    <script src="js/hud.js?v=14"></script>
+    <script src="js/hud_customizer.js?v=14"></script>
+    <script src="js/multiplayer_p2p.js?v=14"></script>
+    <script src="js/bridge.js?v=14"></script>
+    <script src="js/engine.js?v=14"></script>
+</body>
+</html>
