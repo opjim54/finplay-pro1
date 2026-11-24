@@ -1,7 +1,6 @@
 package com.example.ui.screens.games
 
 import com.example.R
-import com.example.domain.games.AetherPlayer
 import com.example.domain.games.LudoColor
 import com.example.i18n.AppLanguage
 
@@ -9,12 +8,10 @@ enum class ArenaGameId {
     LUDO,
     SNAKES_LADDERS,
     CARROM,
+    SHOLO_GUTI,
     CHESS,
     FRUIT_SLASH,
-    WAR_LAND,
-    CONNECT_FOUR,
-    REVERSI,
-    AETHER_CROWN
+    WAR_LAND
 }
 
 data class GameRuleSection(val heading: String, val bullets: List<String>)
@@ -55,32 +52,6 @@ data class GameUiStrings(
     val capturedLabel: String,
     val movesLabel: String,
     val advantageLabel: String,
-    // Aether Crown
-    val roundLabel: String,
-    val rollTwinDice: String,
-    val chargingTwinDice: String,
-    val chooseActionPrompt: String,
-    val diceLeftLabel: String,
-    val chargesLabel: String,
-    val crownedLabel: String,
-    val bridgesEvenLabel: String,
-    val bridgesOddLabel: String,
-    // Reversi
-    val emeraldName: String,
-    val pearlName: String,
-    val reversiTurnPassed: String,
-    val reversiEmeraldWins: String,
-    val reversiPearlWins: String,
-    val reversiDraw: String,
-    val legalMovesHint: String,
-    // Connect Four
-    val solarGoldName: String,
-    val crimsonRubyName: String,
-    val connectFourSolarWins: String,
-    val connectFourCrimsonWins: String,
-    val connectFourDraw: String,
-    val tapColumnToDrop: String,
-    val dropColLabel: String,
     // Leaderboard & Arena Polish
     val leaderboardTitle: String,
     val leaderboardSubtitle: String,
@@ -144,48 +115,50 @@ data class GameUiStrings(
         ArenaGameId.LUDO -> if (isBn) "রয়্যাল লুডু 3D" else "Royal Ludo 3D"
         ArenaGameId.SNAKES_LADDERS -> if (isBn) "সাপ-লুডু 3D (Snakes & Ladders)" else "Snakes & Ladders 3D"
         ArenaGameId.CARROM -> if (isBn) "ক্যারম বোর্ড 3D" else "Carrom Board 3D"
+        ArenaGameId.SHOLO_GUTI -> if (isBn) "ষোল গুটি 3D (16 Beads)" else "Sholo Guti 3D (16 Beads)"
         ArenaGameId.CHESS -> if (isBn) "গ্র্যান্ডমাস্টার দাবা 3D" else "Grandmaster Chess 3D"
         ArenaGameId.FRUIT_SLASH -> if (isBn) "ফ্রুট স্ল্যাশ 3D নিনজা" else "Fruit Slash 3D Ninja"
         ArenaGameId.WAR_LAND -> if (isBn) "ওয়ার ল্যান্ড (3D ব্যাটল রয়্যাল)" else "War Land (3D Battle Royale)"
-        ArenaGameId.CONNECT_FOUR -> if (isBn) "ক্রাউন কানেক্ট ফোর" else "Crown Connect Four"
-        ArenaGameId.REVERSI -> if (isBn) "ইম্পেরিয়াল রিভার্সি (Othello)" else "Imperial Reversi (Othello)"
-        ArenaGameId.AETHER_CROWN -> if (isBn) "Aether Crown: ফ্লাক্স এরিনা" else "Aether Crown: Flux Arena"
     }
 
     fun gameSubtitle(id: ArenaGameId): String = when (id) {
-        ArenaGameId.LUDO -> if (isBn) "৪-কোণার স্বতন্ত্র ডাইস কন্ট্রোল • ৩D বোর্ড, ক্যাপচার ও মাল্টিপ্লেয়ার" else "4-Corner Dedicated Dice Controls • 3D Board, Captures & Real Multiplayer"
-        ArenaGameId.SNAKES_LADDERS -> if (isBn) "১০০-ঘরের ৩D বোর্ড • গোল্ডেন মই, অ্যানিমেটেড সাপ ও ডাইস রোলিং" else "100-Tile 3D Board • Golden Ladders, Animated Snakes & 4-Player Dice"
-        ArenaGameId.CARROM -> if (isBn) "রিয়েলিস্টিক উড ফিনিশ • প্রফেশনাল ৩D বোর্ড, কুইন কাভার ও টুর্নামেন্ট" else "Realistic Wood Finish • Pro 3D Board, Queen Cover & Real Tournaments"
+        ArenaGameId.LUDO -> if (isBn) "২–৫ প্লেয়ার স্টার বোর্ড • ৩D ডাইস কন্ট্রোল, ক্যাপচার ও মাল্টিপ্লেয়ার" else "2–5P Star Board • 3D Dice Controls, Captures & Real Multiplayer"
+        ArenaGameId.SNAKES_LADDERS -> if (isBn) "১০০-ঘরের ৩D বোর্ড • গোল্ডেন মই, অ্যানিমেটেড সাপ ও ৪-প্লেয়ার ডাইস" else "100-Tile 3D Board • Golden Ladders, Animated Snakes & 4-Player Dice"
+        ArenaGameId.CARROM -> if (isBn) "রিয়েলিস্টিক উড ফিনিশ • প্রফেশনাল ৩D বোর্ড, কুইন কাভার ও Play & Earn" else "Realistic Wood Finish • Pro 3D Board, Queen Cover & Play & Earn"
+        ArenaGameId.SHOLO_GUTI -> if (isBn) "বাংলার ঐতিহ্যবাহী ১৬ গুটি • ৩৭ পয়েন্ট, চেইন ক্যাপচার ও মাল্টিপ্লেয়ার" else "Iconic South Asian 16 Beads • 37-Node Board, Chain Captures & Bot"
         ArenaGameId.CHESS -> if (isBn) "সম্পূর্ণ আন্তর্জাতিক নিয়ম • ক্যাসলিং, এন পাসাঁ ও Alpha-Beta বট" else "Full Rules + Castling, En Passant & Grandmaster Bot"
         ArenaGameId.FRUIT_SLASH -> if (isBn) "স্মুথ ফ্লুইড ফিজিক্স • তরমুজ, আনারস ও মাল্টি-কম্বো স্লাইসিং" else "Smooth Fluid Physics • Watermelon, Pineapple & Multi-Combo Slicing"
         ArenaGameId.WAR_LAND -> if (isBn) "লো-পলি ওপেন ওয়ার্ল্ড • থার্ড পার্সন ভিউ, বিল্ডিং স্নাইপিং ও লাইভ বটস" else "Low-Poly Open World • 3rd Person View, Rooftop Sniping & Live Bots"
-        ArenaGameId.CONNECT_FOUR -> if (isBn) "৭×৬ গ্র্যাভিটি ড্রপ ও ৪-লাইন জয়ের কৌশল" else "7×6 Gravity Drop & Tactical 4-in-a-Row Arena"
-        ArenaGameId.REVERSI -> if (isBn) "৮×৮ বোর্ড ডিস্ক-ফ্লিপ কৌশল ও কর্নার কন্ট্রোল বট" else "8×8 Disc-Flip Tactics with Corner-Control AI Bot"
-        ArenaGameId.AETHER_CROWN -> if (isBn) "মৌলিক ডুয়াল-রিং অরবিটাল ফ্লাক্স স্ট্র্যাটেজি গেম" else "World-Original Dual-Ring Orbital Flux Strategy"
     }
 
     fun gameBadge(id: ArenaGameId): String = when (id) {
-        ArenaGameId.LUDO -> if (isBn) "৩D হট" else "3D POPULAR"
-        ArenaGameId.SNAKES_LADDERS -> if (isBn) "৩D ফ্যামিলি" else "3D CLASSIC"
+        ArenaGameId.LUDO -> if (isBn) "২–৫P হট" else "2–5P HOT"
+        ArenaGameId.SNAKES_LADDERS -> if (isBn) "৩D ক্লাসিক" else "3D CLASSIC"
         ArenaGameId.CARROM -> if (isBn) "৩D রিয়েল" else "3D REALISTIC"
+        ArenaGameId.SHOLO_GUTI -> if (isBn) "১৬ গুটি" else "16 BEADS"
         ArenaGameId.CHESS -> if (isBn) "স্ট্র্যাটেজি" else "STRATEGY"
         ArenaGameId.FRUIT_SLASH -> if (isBn) "৩D আর্কেড" else "3D ARCADE"
         ArenaGameId.WAR_LAND -> if (isBn) "৩D অ্যাকশন" else "3D ACTION"
-        ArenaGameId.CONNECT_FOUR -> if (isBn) "কৌশল" else "TACTICAL"
-        ArenaGameId.REVERSI -> if (isBn) "মস্তিষ্ক" else "PUZZLE"
-        ArenaGameId.AETHER_CROWN -> if (isBn) "অরিজিনাল" else "ORIGINAL"
     }
 
     fun bannerResFor(id: ArenaGameId): Int = when (id) {
         ArenaGameId.LUDO -> R.drawable.banner_ludo_3d
         ArenaGameId.CARROM -> R.drawable.banner_carrom_3d
         ArenaGameId.SNAKES_LADDERS -> R.drawable.banner_snakes_ladders_3d
+        ArenaGameId.SHOLO_GUTI -> R.drawable.img_sholo_guti_banner_1795521318541
         ArenaGameId.CHESS -> R.drawable.banner_chess_3d
         ArenaGameId.FRUIT_SLASH -> R.drawable.banner_fruit_slash_3d
         ArenaGameId.WAR_LAND -> R.drawable.banner_warland_3d
-        ArenaGameId.CONNECT_FOUR -> R.drawable.banner_fruit_slash_3d
-        ArenaGameId.REVERSI -> R.drawable.banner_chess_3d
-        ArenaGameId.AETHER_CROWN -> R.drawable.banner_ludo_3d
+    }
+
+    fun iconResFor(id: ArenaGameId): Int = when (id) {
+        ArenaGameId.LUDO -> R.drawable.img_icon_ludo_3d_1795491541946
+        ArenaGameId.SNAKES_LADDERS -> R.drawable.img_icon_snakes_3d_1795491533200
+        ArenaGameId.CARROM -> R.drawable.img_icon_carrom_3d_1795491534374
+        ArenaGameId.SHOLO_GUTI -> R.drawable.img_sholo_guti_banner_1795521318541
+        ArenaGameId.CHESS -> R.drawable.img_icon_chess_3d_1795491533234
+        ArenaGameId.FRUIT_SLASH -> R.drawable.img_icon_fruitslash_3d_1795491537123
+        ArenaGameId.WAR_LAND -> R.drawable.banner_warland_3d
     }
 
     fun botTier(accuracy: Int): String = when {
@@ -202,11 +175,6 @@ data class GameUiStrings(
         LudoColor.YELLOW -> if (isBn) "সোনালি" else "Gold"
         LudoColor.BLUE -> if (isBn) "রক্তিম" else "Crimson"
         LudoColor.PURPLE -> if (isBn) "বেগুনি" else "Amethyst"
-    }
-
-    fun aetherPlayerName(player: AetherPlayer): String = when (player) {
-        AetherPlayer.SOLAR -> if (isBn) "সোলার গোল্ড" else "Solar Gold"
-        AetherPlayer.LUNAR -> if (isBn) "লুনার ইনডিগো" else "Lunar Indigo"
     }
 
     fun ruleTaglineAndSections(id: ArenaGameId): Pair<String, List<GameRuleSection>> = when (id) {
@@ -324,141 +292,53 @@ data class GameUiStrings(
             )
         }
 
-        ArenaGameId.AETHER_CROWN -> if (isBn) {
-            "মৌলিক ডুয়াল-রিং অরবিটাল ফ্লাক্স স্ট্র্যাটেজি বোর্ড গেম" to listOf(
+        ArenaGameId.SHOLO_GUTI -> if (isBn) {
+            "ষোল গুটি 3D • বাংলার ঐতিহ্যবাহী ৩৭-পয়েন্ট স্ট্র্যাটেজি গেম" to listOf(
                 GameRuleSection(
-                    "ডুয়াল-রিং অরবিটাল বোর্ড",
+                    "বোর্ড ও ১৬ বনাম ১৬ গুটি",
                     listOf(
-                        "বাইরের কক্ষপথে ১৬টি নোড (0–15) রয়েছে। নোড 0 ও 8 হলো হোম বেস এবং 0, 4, 8, 12 হলো Aether Switch নোড।",
-                        "৪টি Flux Bridge বাইরের নোড (2, 6, 10, 14) থেকে ভেতরের ৪টি সুরক্ষিত Sanctuary Vault (V0–V3) এর সাথে যুক্ত।",
-                        "একবারে কেবল ২টি কোণাকুণি ব্রিজ খোলা (সবুজ) থাকে। Switch নোডে নামলে বা প্রতি ৩ রাউন্ডে ব্রিজগুলো উল্টে যায়!"
+                        "মোট ৩৭টি ইন্টারসেকশন (মাঝের ৫×৫ স্কয়ার + উপরে ও নিচে ২টি ত্রিভুজ উইং) রয়েছে।",
+                        "রুবি (১৬টি গুটি) ও গোল্ড (১৬টি গুটি) মুখোমুখি বসে, মাঝের সারিটি শুরুতে ফাঁকা থাকে।"
                     )
                 ),
                 GameRuleSection(
-                    "টুইন ডাইস, সার্জ ও কোয়ান্টাম সোয়াপ",
+                    "চাল, ক্যাপচার ও মাল্টি-জাম্প",
                     listOf(
-                        "দুটি ১–৪ Aether ডাইস রোল করুন। যেকোনো [1] বা [4] দিয়ে ডক করা গুটি বোর্ডে নামান।",
-                        "Split Mode: দুটি ডাইস আলাদা আলাদা গুটিতে ব্যবহার করুন বা খোলা ব্রিজ দিয়ে ভল্টে প্রবেশ করুন।",
-                        "Surge Move: দুটি ডাইস যোগ করে (d1+d2) একটি গুটিকে লম্বা লাফ দিন এবং পাশের শত্রুকে ধাক্কা দিয়ে সরান!",
-                        "Quantum Swap: ডাবলস (দুটো সমান সংখ্যা) পড়লে প্রতিপক্ষের গুটির সাথে অবস্থান বদল করুন।"
+                        "লাইন বরাবর পাশের যেকোনো ফাঁকা পয়েন্টে ১ ঘর সরানো যায়।",
+                        "সরলরেখায় প্রতিপক্ষের গুটির ঠিক পরের পয়েন্ট ফাঁকা থাকলে লাফ দিয়ে গুটিটি কেটে নেওয়া যায়।",
+                        "একটি গুটি কাটার পর ওই একই গুটি দিয়ে আরও কাটার সুযোগ থাকলে একটানা চেইন জাম্প ক্যাপচার করা যায়!"
                     )
                 ),
                 GameRuleSection(
-                    "জয়ের দুটি পথ",
+                    "বিজয় ও রিওয়ার্ড",
                     listOf(
-                        "পথ ১ (Ascension): ৪টি গুটির মধ্যে ৩টি Sanctuary Vault থেকে [3] বা [4] ডাইস ব্যবহার করে Crown করুন।",
-                        "পথ ২ (Energy Mastery): অন্তত ১টি Sanctuary Vault ধরে রেখে ৭টি Aether Charge সংগ্রহ করুন।"
+                        "প্রতিপক্ষের সব ১৬টি গুটি কেটে ফেললে অথবা প্রতিপক্ষের কোনো বৈধ চাল না থাকলে তাৎক্ষণিক জয়!",
+                        "অফলাইন, স্মার্ট এআই বট, অনলাইন ফ্রেন্ডস রুম এবং Play & Earn টুর্নামেন্টে খেলা যাবে।"
                     )
                 )
             )
         } else {
-            "Original World-First Orbital Flux Board Game" to listOf(
+            "Sholo Guti 3D • Traditional 37-Point 16 Beads Strategy" to listOf(
                 GameRuleSection(
-                    "Dual-Ring Orbital Board",
+                    "Board & 16v16 Setup",
                     listOf(
-                        "Outer Orbit has 16 nodes (0–15). Nodes 0 & 8 are Anchor Home Bases; 0, 4, 8, 12 are Aether Switch Nodes.",
-                        "4 Flux Bridges link Outer nodes (2, 6, 10, 14) to the 4 Shielded Inner Sanctuary Vaults (V0–V3).",
-                        "Only 2 diagonal Flux Bridges are OPEN at a time. Landing on an Aether Switch (or every 3 rounds) flips bridges!"
+                        "Authentic 37 intersections (central 5×5 diagonal grid plus top and bottom triangular citadels).",
+                        "16 Ruby beads start on bottom vs 16 Gold beads on top, with the middle row open."
                     )
                 ),
                 GameRuleSection(
-                    "Twin Dice, Surge & Quantum Swap",
+                    "Slides & Chain Captures",
                     listOf(
-                        "Roll two 1–4 Aether Dice. Deploy a docked token using any [1] or [4].",
-                        "Split Mode: Spend each die separately on tokens, or cross an OPEN Flux Bridge (cost >= 2) into a Shielded Vault.",
-                        "Surge Mode: Combine BOTH dice (d1+d2) on one outer token to leap forward and push adjacent enemies away!",
-                        "Quantum Swap: Rolling Doubles unlocks an instant teleport swap between your outer token and an enemy outer token."
+                        "Slide one step along any connected board line to an empty adjacent intersection.",
+                        "Jump in a straight line over an adjacent enemy bead into the empty point immediately beyond to capture it.",
+                        "Multi-jump chains let a single bead keep capturing consecutively in one turn!"
                     )
                 ),
                 GameRuleSection(
-                    "Dual Paths to Victory",
+                    "Victory & Game Coins",
                     listOf(
-                        "Path 1 (Ascension): Crown 3 of your 4 tokens from inside Sanctuary Vaults (requires [3] or [4]).",
-                        "Path 2 (Energy Mastery): Collect 7 Aether Charges while holding at least 1 Shielded Sanctuary Vault."
-                    )
-                )
-            )
-        }
-
-        ArenaGameId.REVERSI -> if (isBn) {
-            "ইম্পেরিয়াল রিভার্সি (Othello) • ৮×৮ টেরিটরি কৌশল" to listOf(
-                GameRuleSection(
-                    "খেলার নিয়ম",
-                    listOf(
-                        "প্রত্যেক খেলোয়াড় কেন্দ্রে ২টি করে ডিস্ক নিয়ে শুরু করে। পান্না সবুজ (Emerald) প্রথমে চাল দেয়।",
-                        "এমন একটি ফাঁকা ঘরে ডিস্ক বসান যাতে অনুভূমিক, উল্লম্ব বা কোণাকুণি লাইনে প্রতিপক্ষের এক বা একাধিক ডিস্ক আপনার দুই ডিস্কের মাঝে আটকা পড়ে।",
-                        "মাঝের আটকে পড়া প্রতিপক্ষের সব ডিস্ক আপনার রঙে উল্টে (Flip) যাবে! বোর্ডের ডটে লেখা (+N) সংখ্যাই দেখিয়ে দেয় কয়টি ডিস্ক ফ্লিপ হবে।"
-                    )
-                ),
-                GameRuleSection(
-                    "টার্ন পাস ও বিজয়",
-                    listOf(
-                        "বৈধ চাল না থাকলে টার্ন স্বয়ংক্রিয়ভাবে প্রতিপক্ষের কাছে পাস হবে।",
-                        "দুজনেরই আর কোনো চাল না থাকলে বা ৬৪ ঘর পূর্ণ হলে খেলা শেষ — যার ডিস্ক সংখ্যা বেশি সে বিজয়ী!"
-                    )
-                ),
-                GameRuleSection(
-                    "জয়ের কৌশল",
-                    listOf(
-                        "৪টি কোণা (Corners) সবচেয়ে মূল্যবান কারণ কোণার ডিস্ক কখনোই ফ্লিপ করা যায় না।"
-                    )
-                )
-            )
-        } else {
-            "Classic 8×8 Disc-Flip Territory Battle" to listOf(
-                GameRuleSection(
-                    "Core Mechanics",
-                    listOf(
-                        "Play starts with 4 center discs. Emerald moves first against Pearl.",
-                        "Place a disc to bracket one or more opponent discs horizontally, vertically, or diagonally.",
-                        "All bracketed opponent discs flip to your color! Legal cells display (+N) showing how many discs flip."
-                    )
-                ),
-                GameRuleSection(
-                    "Turn Passing & Victory",
-                    listOf(
-                        "If a player has no legal move, the turn passes automatically.",
-                        "When the board is full or neither side can move, the player with the most discs wins."
-                    )
-                ),
-                GameRuleSection(
-                    "Strategy Tip",
-                    listOf(
-                        "Control the four corners — corner discs can never be flipped! Our Alpha-Beta Bot hunts corners at higher accuracy."
-                    )
-                )
-            )
-        }
-
-        ArenaGameId.CONNECT_FOUR -> if (isBn) {
-            "ক্রাউন কানেক্ট ফোর • ৭×৬ গ্র্যাভিটি ড্রপ" to listOf(
-                GameRuleSection(
-                    "খেলার নিয়ম",
-                    listOf(
-                        "সোলার গোল্ড প্রথমে কলাম নির্বাচন করে বোর্ডে ডিস্ক ফেলে। ডিস্ক মাধ্যাকর্ষণে সেই কলামের সর্বনিম্ন ফাঁকা ঘরে গিয়ে থামে।",
-                        "পাশাপাশি (অনুভূমিক), উপর-নিচ (উল্লম্ব) অথবা কোণাকুণি (তির্যক) যেকোনো দিকে টানা ৪টি নিজের রঙের ডিস্ক সাজাতে পারলেই আপনি জিতে যাবেন!"
-                    )
-                ),
-                GameRuleSection(
-                    "বট কৌশল",
-                    listOf(
-                        "উচ্চ অ্যাকুরেসিতে বট মাঝের কলাম দখল করে, আপনার ৩-লাইনের হুমকি আটকে দেয় এবং ডাবল-থ্রেট ট্র্যাপ তৈরি করে।"
-                    )
-                )
-            )
-        } else {
-            "7×6 Gravity Drop Four-in-a-Row Arena" to listOf(
-                GameRuleSection(
-                    "How to Play",
-                    listOf(
-                        "Solar Gold goes first. Tap any column header or cell to drop a disc to the lowest open slot.",
-                        "Connect 4 of your discs horizontally, vertically, or diagonally to win instantly!"
-                    )
-                ),
-                GameRuleSection(
-                    "Bot Intelligence",
-                    listOf(
-                        "Higher accuracy activates 4-ply Alpha-Beta Negamax search prioritizing center control, threat blocks, and forks."
+                        "Win by capturing all 16 enemy beads or blocking all opponent moves.",
+                        "Online Multiplayer & Friend Rooms award 3x Game Coins!"
                     )
                 )
             )
@@ -683,7 +563,7 @@ fun gameStringsFor(language: AppLanguage): GameUiStrings = if (language == AppLa
         isBn = true,
         arenaBannerTitle = "✦ Play & Earn • ডুয়াল ওয়ালেট এরিনা ✦",
         arenaBannerDesc = "টুর্নামেন্টে হারলেও এন্ট্রি ফি ১০০% গেম ওয়ালেটে ক্যাশব্যাক! অফলাইন বট বা অনলাইন ফ্রেন্ডসদের সাথে খেলুন।",
-        arenaHeaderSubtitle = "৫টি প্রিমিয়াম গেম • অনলাইন ফ্রেন্ডস • ডুয়াল ওয়ালেট ও আর্মরি",
+        arenaHeaderSubtitle = "৭টি প্রিমিয়াম ৩D গেম • অনলাইন ফ্রেন্ডস • ডুয়াল ওয়ালেট ও আর্মরি",
         playNow = "এখনই খেলুন",
         rules = "নিয়ম",
         newMatch = "নতুন ম্যাচ",
@@ -713,29 +593,6 @@ fun gameStringsFor(language: AppLanguage): GameUiStrings = if (language == AppLa
         capturedLabel = "ক্যাপচার:",
         movesLabel = "চাল:",
         advantageLabel = "অগ্রগতি:",
-        roundLabel = "রাউন্ড",
-        rollTwinDice = "টুইন Aether ডাইস রোল করুন (১–৪)",
-        chargingTwinDice = "টুইন ডাইস চার্জ হচ্ছে...",
-        chooseActionPrompt = "আপনার কৌশল বেছে নিন",
-        diceLeftLabel = "বাকি ডাইস:",
-        chargesLabel = "চার্জ",
-        crownedLabel = "ক্রাউন",
-        bridgesEvenLabel = "ব্রিজ ২ ও ১০ খোলা",
-        bridgesOddLabel = "ব্রিজ ৬ ও ১৪ খোলা",
-        emeraldName = "পান্না সবুজ",
-        pearlName = "মুক্তা সাদা",
-        reversiTurnPassed = "কোনো বৈধ চাল নেই — টার্ন পাস!",
-        reversiEmeraldWins = "🏆 পান্না সবুজ জয়ী!",
-        reversiPearlWins = "🏆 মুক্তা সাদা জয়ী!",
-        reversiDraw = "ড্র — সমান সংখ্যক ডিস্ক!",
-        legalMovesHint = "বৈধ চাল:",
-        solarGoldName = "সোলার গোল্ড",
-        crimsonRubyName = "ক্রিমসন রুবি",
-        connectFourSolarWins = "🏆 সোলার গোল্ড ৪-ইন-এ-রো জয়ী!",
-        connectFourCrimsonWins = "🏆 ক্রিমসন রুবি ৪-ইন-এ-রো জয়ী!",
-        connectFourDraw = "বোর্ড পূর্ণ — খেলা ড্র!",
-        tapColumnToDrop = "ডিস্ক ফেলতে যেকোনো কলামে ট্যাপ করুন",
-        dropColLabel = "কলাম",
         leaderboardTitle = "এরিনা লিডারবোর্ড",
         leaderboardSubtitle = "লোকাল রুম ডাটাবেজে সংরক্ষিত সর্বোচ্চ স্কোর ও জয়ের হার",
         totalMatchesLabel = "মোট ম্যাচ",
@@ -798,7 +655,7 @@ fun gameStringsFor(language: AppLanguage): GameUiStrings = if (language == AppLa
         isBn = false,
         arenaBannerTitle = "✦ Play & Earn • Dual Wallet Arena ✦",
         arenaBannerDesc = "Lose a paid tournament? 100% of your entry fee goes straight into your Game Wallet! Play Bots or Online Friends.",
-        arenaHeaderSubtitle = "5 Games • Online Friends • Dual Wallets & Armory",
+        arenaHeaderSubtitle = "7 Pro 3D Games • Online Friends • Dual Wallets & Armory",
         playNow = "Play Now",
         rules = "Rules",
         newMatch = "New Match",
@@ -828,29 +685,6 @@ fun gameStringsFor(language: AppLanguage): GameUiStrings = if (language == AppLa
         capturedLabel = "Captured:",
         movesLabel = "Moves:",
         advantageLabel = "Advantage:",
-        roundLabel = "Round",
-        rollTwinDice = "Roll Twin Aether Dice (1–4)",
-        chargingTwinDice = "Charging Twin Dice...",
-        chooseActionPrompt = "Choose Your Action",
-        diceLeftLabel = "Dice left:",
-        chargesLabel = "Charges",
-        crownedLabel = "Crowned",
-        bridgesEvenLabel = "Bridges 2 & 10 Open",
-        bridgesOddLabel = "Bridges 6 & 14 Open",
-        emeraldName = "Emerald",
-        pearlName = "Pearl",
-        reversiTurnPassed = "No legal moves — Turn Passed!",
-        reversiEmeraldWins = "🏆 Emerald Wins!",
-        reversiPearlWins = "🏆 Pearl Wins!",
-        reversiDraw = "Draw — Equal Discs!",
-        legalMovesHint = "Legal Moves:",
-        solarGoldName = "Solar Gold",
-        crimsonRubyName = "Crimson Ruby",
-        connectFourSolarWins = "🏆 Solar Gold Connects 4!",
-        connectFourCrimsonWins = "🏆 Crimson Ruby Connects 4!",
-        connectFourDraw = "Board Full — Draw!",
-        tapColumnToDrop = "Tap any column to drop your disc",
-        dropColLabel = "Col",
         leaderboardTitle = "Arena Leaderboard",
         leaderboardSubtitle = "High scores & win rates persisted locally via Room",
         totalMatchesLabel = "Matches",

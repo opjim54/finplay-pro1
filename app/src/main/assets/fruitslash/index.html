@@ -275,6 +275,11 @@
             <span class="score-display" id="score-text">0</span>
         </div>
 
+        <div class="hud-card" id="bot-card" style="display: none; border-color: rgba(16, 185, 129, 0.5);">
+            <span style="font-size: 11px; font-weight: 800; color: #6ee7b7;">🤖 BOT</span>
+            <span class="score-display" id="bot-score-text" style="color: #6ee7b7; font-size: 22px;">0</span>
+        </div>
+
         <div class="hud-card" id="lives-card">
             <span style="font-size: 12px; font-weight: 800; color: #cbd5e1;">LIVES</span>
             <div class="lives-display" id="lives-container">
@@ -624,27 +629,34 @@
             }
         ];
 
+        const fsUrlParams = new URLSearchParams(window.location.search);
+        const initialUrlMode = (fsUrlParams.get('mode') || 'classic').toLowerCase();
+        const urlBotAcc = parseInt(fsUrlParams.get('botAcc') || '80', 10);
+
         let activeFruits = [];
         let juiceParticles = [];
         let score = 0;
+        let botScore = 0;
+        let botAccuracyPct = Number.isFinite(urlBotAcc) ? Math.min(100, Math.max(30, urlBotAcc)) : 80;
         let lives = 3;
         let gameActive = true;
-        let gameMode = 'classic';
+        let gameMode = ['classic', 'bot', 'friend', 'practice', 'tournament'].includes(initialUrlMode) ? initialUrlMode : 'classic';
         let lastComboTime = 0;
         let comboCount = 0;
 
-        function setMode(mode) {
-            gameMode = mode;
+        function syncModeUi(mode) {
             document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
             const active = document.getElementById(`chip-${mode}`);
             if (active) active.classList.add('active');
+            document.getElementById('lives-card').style.display = (mode === 'practice') ? 'none' : 'flex';
+            document.getElementById('bot-card').style.display = (mode === 'bot') ? 'flex' : 'none';
+        }
 
+        function setMode(mode) {
+            gameMode = mode;
+            syncModeUi(mode);
             if (mode === 'friend') {
                 openFriendModal();
-            } else if (mode === 'practice') {
-                document.getElementById('lives-card').style.display = 'none';
-            } else {
-                document.getElementById('lives-card').style.display = 'flex';
             }
             restartGame();
         }
@@ -740,14 +752,14 @@
             const isBombChance = (gameMode !== 'practice') && (Math.random() < 0.20);
             let fruitDef = isBombChance ? FRUIT_TYPES[FRUIT_TYPES.length - 1] : FRUIT_TYPES[Math.floor(Math.random() * (FRUIT_TYPES.length - 1))];
 
-            // Gentle launch trajectory
-            const startX = (Math.random() - 0.5) * 5.5;
-            const startY = -6.5;
-            const targetX = (Math.random() - 0.5) * 2.8;
+            // High, expressive launch trajectory clear of bottom HUD bar
+            const startX = (Math.random() - 0.5) * 4.8;
+            const startY = -5.8;
+            const targetX = (Math.random() - 0.5) * 2.4;
 
-            // Slow, floaty velocities (tuned for smooth 2.0s hang-time!)
-            const vx = (targetX - startX) * 0.007 + (Math.random() - 0.5) * 0.008;
-            const vy = 0.135 + Math.random() * 0.025;
+            // Tuned so apex reaches y ≈ -0.6 to +1.8 cleanly in center view
+            const vx = (targetX - startX) * 0.008 + (Math.random() - 0.5) * 0.008;
+            const vy = 0.245 + Math.random() * 0.045;
             const rotSpeed = {
                 x: (Math.random() - 0.5) * 0.015,
                 y: (Math.random() - 0.5) * 0.015,
@@ -862,6 +874,26 @@
                     score += fruit.def.points;
                     document.getElementById('score-text').innerText = score;
 
+                    // Spawn 3D Juice Splash Droplets
+                    const dropColor = new THREE.Color(fruit.def.splatColor || '#fde047');
+                    const dropGeom = new THREE.SphereGeometry(0.11, 8, 8);
+                    for (let j = 0; j < 10; j++) {
+                        const dropMat = new THREE.MeshBasicMaterial({ color: dropColor, transparent: true, opacity: 0.95 });
+                        const dropMesh = new THREE.Mesh(dropGeom, dropMat);
+                        dropMesh.position.set(fx, fy, 0.2);
+                        scene.add(dropMesh);
+                        const ang = Math.random() * Math.PI * 2;
+                        const spd = 0.05 + Math.random() * 0.09;
+                        juiceParticles.push({
+                            mesh: dropMesh,
+                            vx: Math.cos(ang) * spd,
+                            vy: Math.sin(ang) * spd + 0.04,
+                            vz: (Math.random() - 0.5) * 0.06,
+                            life: 1.0,
+                            geom: dropGeom
+                        });
+                    }
+
                     // Remove whole fruit
                     scene.remove(fruit.mesh);
 
@@ -938,28 +970,47 @@
         }
 
         function gameOver(reason = "Game Over!") {
+            if (!gameActive) return;
             gameActive = false;
-            document.getElementById('modal-title').innerText = reason;
-            document.getElementById('modal-score').innerText = `Final Score: ${score}`;
-            document.getElementById('modal-coins').innerText = `🎉 Match Reward: +${Math.round(score / 3)} Tournament Coins credited to Play Wallet!`;
+            const isBotDuel = (gameMode === 'bot');
+            const outcome = isBotDuel
+                ? (score > botScore ? "WIN" : (score === botScore ? "DRAW" : "LOSS"))
+                : (score >= 50 ? "WIN" : "LOSS");
+
+            document.getElementById('modal-title').innerText = isBotDuel
+                ? (outcome === "WIN" ? "🏆 Victory vs Bot!" : (outcome === "DRAW" ? "🤝 Draw vs Bot!" : "🤖 Bot Rival Wins!"))
+                : reason;
+            document.getElementById('modal-score').innerText = isBotDuel
+                ? `You: ${score} pts • Bot Rival: ${botScore} pts`
+                : `Final Score: ${score}`;
+            document.getElementById('modal-coins').innerText =
+                `🪙 Arena Match Complete • Reward synced to FinPlay Wallet!`;
             document.getElementById('game-over-modal').style.display = 'flex';
 
             if (window.AndroidBridge && window.AndroidBridge.onMatchEnd) {
-                window.AndroidBridge.onMatchEnd(score >= 50 ? "WIN" : "LOSS", score, true, 80);
+                window.AndroidBridge.onMatchEnd(outcome, score, isBotDuel, botAccuracyPct);
             }
         }
 
         function restartGame() {
             score = 0;
+            botScore = 0;
             lives = 3;
             gameActive = true;
             comboCount = 0;
             document.getElementById('score-text').innerText = '0';
+            document.getElementById('bot-score-text').innerText = '0';
             updateLivesDisplay();
+            syncModeUi(gameMode);
             document.getElementById('game-over-modal').style.display = 'none';
 
             activeFruits.forEach(f => scene.remove(f.mesh));
             activeFruits = [];
+            juiceParticles.forEach(p => {
+                scene.remove(p.mesh);
+                if (p.mesh.material) p.mesh.material.dispose();
+            });
+            juiceParticles = [];
         }
 
         function openFriendModal() {
@@ -983,7 +1034,7 @@
 
         function shareWhatsApp() {
             const code = document.getElementById('display-room-code').innerText;
-            const text = encodeURIComponent(`🍉 Play 3D Fruit Slash with me on FinPlay Pro! Private Duel Room: ${code}. Join here: http://localhost:8089/fruitslash/`);
+            const text = encodeURIComponent(`🍉 Challenge me in FinPlay Pro • 3D Fruit Slash! Enter Room Code: ${code} inside FinPlay Pro Arena.`);
             window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank');
         }
 
@@ -1042,7 +1093,7 @@
         let lastTimestamp = 0;
         let lastSpawn = 0;
         const TARGET_FRAME_MS = 1000 / 60; // 16.67ms base
-        const GRAVITY_PER_SEC = 0.20; // Natural, floaty gravity
+        const GRAVITY_PER_SEC = 0.31; // Responsive ballistic arc cleanly clearing bottom HUD
 
         function animate(timestamp) {
             requestAnimationFrame(animate);
@@ -1059,6 +1110,13 @@
                 for (let i = 0; i < count; i++) {
                     setTimeout(spawnFruit, i * 360);
                 }
+                if (gameMode === 'bot') {
+                    const hitChance = botAccuracyPct / 100.0;
+                    if (Math.random() < hitChance) {
+                        botScore += (count * 10);
+                        document.getElementById('bot-score-text').innerText = botScore;
+                    }
+                }
             }
 
             // Update fruit physics normalized by timeScale
@@ -1073,9 +1131,9 @@
                 fruit.mesh.rotation.z += fruit.rot.z * timeScale;
 
                 // Check dropped fruit penalty
-                if (!fruit.isSliced && !fruit.def.isBomb && fruit.y < -7.0 && fruit.vy < 0) {
+                if (!fruit.isSliced && !fruit.def.isBomb && fruit.y < -6.6 && fruit.vy < 0) {
                     fruit.isSliced = true;
-                    if (gameMode === 'classic' || gameMode === 'tournament') {
+                    if (gameMode === 'classic' || gameMode === 'tournament' || gameMode === 'bot') {
                         loseLife();
                     }
                 }
@@ -1083,12 +1141,28 @@
 
             // Clean up fallen fruits
             activeFruits = activeFruits.filter(fruit => {
-                if (fruit.y < -8.5) {
+                if (fruit.y < -8.0) {
                     scene.remove(fruit.mesh);
                     return false;
                 }
                 return true;
             });
+
+            // Update 3D juice splash particles
+            for (let j = juiceParticles.length - 1; j >= 0; j--) {
+                const p = juiceParticles[j];
+                p.vy -= 0.005 * timeScale;
+                p.mesh.position.x += p.vx * timeScale;
+                p.mesh.position.y += p.vy * timeScale;
+                p.mesh.position.z += p.vz * timeScale;
+                p.life -= 0.032 * timeScale;
+                if (p.mesh.material) p.mesh.material.opacity = Math.max(0, p.life);
+                if (p.life <= 0) {
+                    scene.remove(p.mesh);
+                    if (p.mesh.material) p.mesh.material.dispose();
+                    juiceParticles.splice(j, 1);
+                }
+            }
 
             drawTrail();
             renderer.render(scene, camera);

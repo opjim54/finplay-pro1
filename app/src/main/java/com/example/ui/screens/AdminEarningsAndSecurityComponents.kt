@@ -220,7 +220,7 @@ fun AdminEarningsTab(
             item(key = "earnings_empty_games") {
                 LedgerCard(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        "No commissions recorded in ${selectedRange.label} yet. Whenever players join Free Fire tournaments or finish paid Ludo / Chess / Aether Crown / Reversi / Connect 4 matches, Admin commission is automatically logged here.",
+                        "No commissions recorded in ${selectedRange.label} yet. Whenever players join Free Fire tournaments or finish paid Ludo / Sholo Guti / Snakes & Ladders / Carrom / Chess / Fruit Slash / War Land matches, Admin commission is automatically logged here.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -234,10 +234,11 @@ fun AdminEarningsTab(
                 val accent = when (row.gameId.uppercase()) {
                     "FREE_FIRE" -> Color(0xFFEF4444)
                     "LUDO" -> Color(0xFF059669)
+                    "SHOLO_GUTI" -> Color(0xFFE11D48)
+                    "SNAKES_LADDERS" -> Color(0xFF10B981)
                     "CHESS" -> Color(0xFF0284C7)
-                    "AETHER_CROWN" -> Color(0xFF7C3AED)
-                    "REVERSI" -> Color(0xFF0D9488)
-                    "CONNECT_FOUR" -> Color(0xFFE11D48)
+                    "FRUIT_SLASH" -> Color(0xFFF59E0B)
+                    "WAR_LAND" -> Color(0xFF6366F1)
                     "CARROM" -> Color(0xFFD97706)
                     else -> Color(0xFFF59E0B)
                 }

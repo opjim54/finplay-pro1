@@ -512,7 +512,7 @@ data class PlayWalletLedgerEntity(
 @Entity(tableName = "tournament_tier_configs")
 data class TournamentTierConfigEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val gameId: String, // "LUDO", "CHESS", "AETHER_CROWN", "REVERSI", "CONNECT_FOUR"
+    val gameId: String, // "LUDO", "SNAKES_LADDERS", "CARROM", "SHOLO_GUTI", "CHESS", "FRUIT_SLASH", "WAR_LAND"
     val tierLabel: String, // e.g., "Bronze", "Silver", "Gold", "Diamond"
     val entryFee: Double,
     val winPrize: Double,
@@ -523,7 +523,7 @@ data class TournamentTierConfigEntity(
 @Serializable
 @Entity(tableName = "game_bot_configs")
 data class GameBotConfigEntity(
-    @PrimaryKey val gameId: String, // "LUDO", "CHESS", "AETHER_CROWN", "REVERSI", "CONNECT_FOUR"
+    @PrimaryKey val gameId: String, // "LUDO", "SNAKES_LADDERS", "CARROM", "SHOLO_GUTI", "CHESS", "FRUIT_SLASH", "WAR_LAND"
     val botAccuracyPercent: Int = 65,
     val maxConcurrentSeats: Int = 10,
     val multiplayerEnabled: Boolean = true,
@@ -587,7 +587,7 @@ data class BroadcastNotificationEntity(
 @Entity(tableName = "admin_earnings")
 data class AdminEarningEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val gameId: String, // LUDO, CHESS, AETHER_CROWN, REVERSI, CONNECT_FOUR, FREE_FIRE, ESPORTS
+    val gameId: String, // LUDO, SNAKES_LADDERS, CARROM, SHOLO_GUTI, CHESS, FRUIT_SLASH, WAR_LAND, FREE_FIRE, ESPORTS
     val sourceType: String, // INBUILT_MATCH, EXTERNAL_TOURNAMENT, MANUAL_ADJUST
     val referenceTitle: String = "",
     val grossPool: Double = 0.0,

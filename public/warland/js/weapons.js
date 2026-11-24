@@ -185,6 +185,9 @@ class WeaponInventory {
         this.isReloading = true;
         this.reloadTimer = weapon.reloadTime;
         if (window.soundEngine) window.soundEngine.playReload();
+        if (window.player && typeof window.player.onReloadStarted === 'function') {
+            window.player.onReloadStarted(weapon.reloadTime);
+        }
         return true;
     }
 

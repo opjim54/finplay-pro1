@@ -26,13 +26,17 @@ class WarLandBridge {
                     picEl.style.display = 'block';
                 }
             }
-            if (charSkin && window.player) {
+            if (charSkin) {
                 this.equippedSkin = charSkin;
-                window.player.applySkin(charSkin);
+                if (window.player && typeof window.player.applySkin === 'function') {
+                    window.player.applySkin(charSkin);
+                }
             }
-            if (gunSkin && window.player) {
+            if (gunSkin) {
                 this.equippedGunSkin = gunSkin;
-                window.player.applyWeaponSkin(gunSkin);
+                if (window.player && typeof window.player.applyWeaponSkin === 'function') {
+                    window.player.applyWeaponSkin(gunSkin);
+                }
             }
         };
 

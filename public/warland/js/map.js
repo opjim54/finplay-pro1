@@ -11,11 +11,50 @@ class WarLandMap {
         this.spatialGrid = new Map(); // Spatial partition for 60fps fast collision
         this.gridCellSize = 25;
         this.buildingConfigs = [];
+        this.buildingFootprints = []; // { minX, maxX, minZ, maxZ } for zero-overlap prop placement
+        this.roadRects = [];          // { minX, maxX, minZ, maxZ } for zero-overlap tree/rock placement
         this.spawnPoints = [];
         this.blimp = null;
         this.water = null;
         this.blimpAngle = 0;
         this.waterTime = 0;
+        this.islandRadius = 520;
+    }
+
+    registerFootprint(cx, cz, halfW, halfD) {
+        this.buildingFootprints.push({
+            minX: cx - halfW,
+            maxX: cx + halfW,
+            minZ: cz - halfD,
+            maxZ: cz + halfD
+        });
+    }
+
+    registerRoadRect(cx, cz, width, length) {
+        this.roadRects.push({
+            minX: cx - width / 2,
+            maxX: cx + width / 2,
+            minZ: cz - length / 2,
+            maxZ: cz + length / 2
+        });
+    }
+
+    isClearForProp(x, z, pad = 3.5) {
+        // Keep inside walkable island shore
+        if (Math.hypot(x, z) > 495) return false;
+        for (let i = 0; i < this.roadRects.length; i++) {
+            const r = this.roadRects[i];
+            if (x >= r.minX - pad && x <= r.maxX + pad && z >= r.minZ - pad && z <= r.maxZ + pad) {
+                return false;
+            }
+        }
+        for (let i = 0; i < this.buildingFootprints.length; i++) {
+            const b = this.buildingFootprints[i];
+            if (x >= b.minX - pad && x <= b.maxX + pad && z >= b.minZ - pad && z <= b.maxZ + pad) {
+                return false;
+            }
+        }
+        return true;
     }
 
     addWalkableSurface(surf) {
@@ -69,8 +108,8 @@ class WarLandMap {
     }
 
     createTerrainAndOcean() {
-        // 1. Vast Ocean Water Plane with Sun Specular (2800m x 2800m)
-        const waterGeom = new THREE.PlaneGeometry(2800, 2800, 32, 32);
+        // 1. Vast Ocean Water Plane with Sun Specular (3600m x 3600m)
+        const waterGeom = new THREE.PlaneGeometry(3600, 3600, 32, 32);
         const waterMat = new THREE.MeshStandardMaterial({
             color: 0x0284C7,
             roughness: 0.15,
@@ -108,10 +147,10 @@ class WarLandMap {
         const groundTex = new THREE.CanvasTexture(groundCanvas);
         groundTex.wrapS = THREE.RepeatWrapping;
         groundTex.wrapT = THREE.RepeatWrapping;
-        groundTex.repeat.set(42, 42);
+        groundTex.repeat.set(62, 62);
 
-        // Main Island Ground Surface (Radius 360m, Top sits at Y = 0.0)
-        const islandGeom = new THREE.CylinderGeometry(360, 395, 3.0, 64);
+        // Main Island Ground Surface (Expanded 520m Radius, Top sits at Y = 0.0)
+        const islandGeom = new THREE.CylinderGeometry(520, 555, 3.0, 72);
         const islandMat = new THREE.MeshStandardMaterial({
             map: groundTex,
             roughness: 0.75,
@@ -125,14 +164,14 @@ class WarLandMap {
         // Walkable ground plane at Y = 0
         this.walkableSurfaces.push({
             y: 0.0,
-            minX: -350,
-            maxX: 350,
-            minZ: -350,
-            maxZ: 350
+            minX: -510,
+            maxX: 510,
+            minZ: -510,
+            maxZ: 510
         });
 
-        // 3. Sandy Shoreline Ring (325m to 370m, sits at Y = 0.02)
-        const sandGeom = new THREE.RingGeometry(325, 370, 64);
+        // 3. Sandy Shoreline Ring (475m to 530m, sits at Y = 0.02)
+        const sandGeom = new THREE.RingGeometry(475, 530, 72);
         const sandMat = new THREE.MeshStandardMaterial({
             color: 0xFDE047,
             roughness: 0.9,
@@ -168,163 +207,204 @@ class WarLandMap {
             rctx.fillRect(62, y, 4, 28);
         }
 
-        const roadTex = new THREE.CanvasTexture(roadCanvas);
-        roadTex.wrapS = THREE.RepeatWrapping;
-        roadTex.wrapT = THREE.RepeatWrapping;
-        roadTex.repeat.set(1, 24);
+        const makeRoadMat = (repeatY) => {
+            const tex = new THREE.CanvasTexture(roadCanvas);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(1, repeatY);
+            return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.75, metalness: 0.1 });
+        };
 
-        const roadMat = new THREE.MeshStandardMaterial({
-            map: roadTex,
-            roughness: 0.75,
-            metalness: 0.1
-        });
+        const addRoad = (cx, cz, width, length, isEW = false, yPos = 0.04) => {
+            const geom = new THREE.PlaneGeometry(width, length);
+            const mat = makeRoadMat(Math.max(4, Math.round(length / 22)));
+            const mesh = new THREE.Mesh(geom, mat);
+            if (isEW) {
+                mesh.rotation.set(-Math.PI / 2, 0, Math.PI / 2);
+                this.registerRoadRect(cx, cz, length, width);
+            } else {
+                mesh.rotation.x = -Math.PI / 2;
+                this.registerRoadRect(cx, cz, width, length);
+            }
+            mesh.position.set(cx, yPos, cz);
+            mesh.receiveShadow = true;
+            this.scene.add(mesh);
+        };
 
-        // 1. Main North-South Highway (520m long, Y = 0.04 to cleanly sit above grass)
-        const roadNSGeom = new THREE.PlaneGeometry(16, 520);
-        const roadNS = new THREE.Mesh(roadNSGeom, roadMat);
-        roadNS.rotation.x = -Math.PI / 2;
-        roadNS.position.set(0, 0.04, 0);
-        roadNS.receiveShadow = true;
-        this.scene.add(roadNS);
+        // 1. Main North-South Highway (860m long across island)
+        addRoad(0, 0, 16, 860, false, 0.04);
 
-        // 2. East-West Cross Road (520m long, rotated 90 deg so road markings align cleanly along X)
-        const roadEWGeom = new THREE.PlaneGeometry(16, 520);
-        const roadEW = new THREE.Mesh(roadEWGeom, roadMat);
-        roadEW.rotation.set(-Math.PI / 2, 0, Math.PI / 2);
-        roadEW.position.set(0, 0.045, 0);
-        roadEW.receiveShadow = true;
-        this.scene.add(roadEW);
+        // 2. Main East-West Cross Highway (860m long)
+        addRoad(0, 0, 16, 860, true, 0.045);
 
-        // 3. Residential Suburb Boulevard (Connecting North-East Modern Villas)
-        const resRoadGeom = new THREE.PlaneGeometry(12, 180);
-        const resRoad = new THREE.Mesh(resRoadGeom, roadMat);
-        resRoad.rotation.x = -Math.PI / 2;
-        resRoad.position.set(105, 0.05, -100);
-        resRoad.receiveShadow = true;
-        this.scene.add(resRoad);
+        // 3. West Downtown Commercial Avenue & Cross Street
+        addRoad(-185, -30, 14, 420, false, 0.05);
+        addRoad(-155, -140, 12, 310, true, 0.052);
 
-        // 4. Airport Supercar Runway (34m wide, 280m long)
+        // 4. North-East Modern Suburb Boulevard & Cross Street
+        addRoad(165, -165, 12, 330, false, 0.05);
+        addRoad(155, -170, 12, 310, true, 0.052);
+
+        // 5. South Industrial Access Road
+        addRoad(-20, 210, 12, 440, true, 0.05);
+
+        // 6. East Airbase & Supercar Runway (36m wide, 300m long at x=255, z=30..330)
         const runwayMat = new THREE.MeshStandardMaterial({ color: 0x0F172A, roughness: 0.65, metalness: 0.2 });
-        const runwayGeom = new THREE.PlaneGeometry(34, 280);
+        const runwayGeom = new THREE.PlaneGeometry(36, 300);
         const runway = new THREE.Mesh(runwayGeom, runwayMat);
         runway.rotation.x = -Math.PI / 2;
-        runway.position.set(145, 0.06, 50);
+        runway.position.set(255, 0.06, 180);
         runway.receiveShadow = true;
         this.scene.add(runway);
+        this.registerRoadRect(255, 180, 46, 310);
 
-        // Runway Yellow Dashed Center Line
-        const rwLineGeom = new THREE.PlaneGeometry(1.8, 270);
+        // Runway Yellow Dashed Center Line & Threshold Stripes
         const rwLineMat = new THREE.MeshBasicMaterial({ color: 0xF59E0B });
-        const rwLine = new THREE.Mesh(rwLineGeom, rwLineMat);
+        const rwLine = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 286), rwLineMat);
         rwLine.rotation.x = -Math.PI / 2;
-        rwLine.position.set(145, 0.07, 50);
+        rwLine.position.set(255, 0.07, 180);
         this.scene.add(rwLine);
 
-        // 5. Coastal Bridge extending over eastern ocean
-        const bridgeGeom = new THREE.BoxGeometry(120, 1.4, 18);
+        // 7. Coastal Bridge extending over eastern ocean (x: 420..560)
+        const bridgeGeom = new THREE.BoxGeometry(140, 1.4, 18);
         const bridgeMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.6, roughness: 0.35 });
         const bridge = new THREE.Mesh(bridgeGeom, bridgeMat);
-        bridge.position.set(290, 0.7, 0);
+        bridge.position.set(490, 0.7, 0);
         bridge.castShadow = true;
         bridge.receiveShadow = true;
         this.scene.add(bridge);
+        this.registerRoadRect(490, 0, 145, 22);
 
-        this.addBoxCollider(bridge.position, new THREE.Vector3(120, 1.4, 18), true, 1.4);
+        this.addBoxCollider(bridge.position, new THREE.Vector3(140, 1.4, 18), true, 1.4);
         this.walkableSurfaces.push({
             y: 1.4,
-            minX: 230, maxX: 350,
+            minX: 420, maxX: 560,
             minZ: -9, maxZ: 9
         });
     }
 
-    // ── DOWNTOWN COMMERCIAL DISTRICT (From user's Buildings.blend) ───────────
+    // ── WEST DOWNTOWN COMMERCIAL DISTRICT (building_city_blocks.glb + building_multistory.glb) ──
     createCityBlocksDistrict() {
         if (!window.blenderAssetLoader) return;
         const cityConfigs = [
-            // West & North-West Commercial City Corridor
-            { name: 'bina',     x: -60,  z: -35, rot: 0,             size: new THREE.Vector3(24, 39, 26) },
-            { name: 'bina.001', x: -95,  z: -45, rot: Math.PI / 2,   size: new THREE.Vector3(35, 40, 22) },
-            { name: 'bina.002', x: -140, z: -35, rot: 0,             size: new THREE.Vector3(13, 42, 20) },
-            { name: 'bina.003', x: -60,  z: -95, rot: 0,             size: new THREE.Vector3(24, 50, 25) },
-            { name: 'bina.004', x: -105, z: -100, rot: Math.PI / 2,  size: new THREE.Vector3(25, 13, 29) },
-            { name: 'bina.005', x: -155, z: -90, rot: 0,             size: new THREE.Vector3(44, 18, 38) },
-            { name: 'bina.006', x: -60,  z: -155, rot: 0,            size: new THREE.Vector3(20, 54, 20) },
-            { name: 'bina.007', x: -110, z: -160, rot: Math.PI / 2,  size: new THREE.Vector3(30, 47, 32) },
-            { name: 'bina.008', x: -165, z: -155, rot: 0,            size: new THREE.Vector3(48, 20, 26) },
-            { name: 'bina.009', x: -60,  z: 60,  rot: 0,             size: new THREE.Vector3(19, 38, 15) },
-            { name: 'bina.010', x: -105, z: 65,  rot: Math.PI / 2,   size: new THREE.Vector3(24, 50, 25) },
-            { name: 'bina.014', x: -150, z: 70,  rot: 0,             size: new THREE.Vector3(22, 25, 31) }
+            // North-West Commercial Blocks (between x=-100..-310, z=-250..-35, clear of West Ave x=-185 & Cross z=-140)
+            { name: 'bina',     x: -115, z: -55,  rot: 0 },
+            { name: 'bina.001', x: -115, z: -102, rot: Math.PI / 2 },
+            { name: 'bina.002', x: -115, z: -185, rot: 0 },
+            { name: 'bina.003', x: -115, z: -235, rot: 0 },
+            { name: 'bina.004', x: -245, z: -55,  rot: Math.PI / 2 },
+            { name: 'bina.005', x: -255, z: -105, rot: 0 },
+            { name: 'bina.006', x: -245, z: -185, rot: 0 },
+            { name: 'bina.007', x: -255, z: -235, rot: Math.PI / 2 },
+            { name: 'bina.008', x: -305, z: -90,  rot: 0 },
+            // South-West Commercial Plaza (west of West Avenue, z=+45..+145)
+            { name: 'bina.009', x: -240, z: 55,   rot: 0 },
+            { name: 'bina.010', x: -295, z: 65,   rot: Math.PI / 2 },
+            { name: 'bina.014', x: -245, z: 125,  rot: 0 }
         ];
 
         cityConfigs.forEach(cfg => {
             const b = window.blenderAssetLoader.createCityBuildingInstance(cfg.name, cfg.x, cfg.z, cfg.rot);
             if (b) {
                 this.scene.add(b);
-                this.addBoxCollider(new THREE.Vector3(cfg.x, cfg.size.y / 2, cfg.z), cfg.size, false);
-                this.buildingConfigs.push({ x: cfg.x, z: cfg.z, type: 'city', rot: cfg.rot });
+                const ws = b.userData.worldBoxSize || new THREE.Vector3(24, 36, 24);
+                this.addBoxCollider(new THREE.Vector3(cfg.x, ws.y / 2, cfg.z), ws, true, ws.y);
+                this.registerFootprint(cfg.x, cfg.z, ws.x / 2 + 2.5, ws.z / 2 + 2.5);
+                this.buildingConfigs.push({ x: cfg.x, z: cfg.z, w: ws.x, d: ws.z, type: 'city', rot: 0 });
+            }
+        });
+
+        // Supplied Multi-Story Commercial Apartment Towers (building_multistory.glb)
+        const multiConfigs = [
+            { x: -140, z: 55,   rot: 0 },
+            { x: -140, z: 115,  rot: Math.PI / 2 },
+            { x: -305, z: -185, rot: 0 },
+            { x: -295, z: 135,  rot: Math.PI }
+        ];
+        multiConfigs.forEach(cfg => {
+            const m = window.blenderAssetLoader.createBuildingInstance('multistory', cfg.x, cfg.z, cfg.rot);
+            if (m) {
+                this.scene.add(m);
+                m.updateMatrixWorld(true);
+                const wb = new THREE.Box3().setFromObject(m);
+                const ws = new THREE.Vector3();
+                wb.getSize(ws);
+                this.addBoxCollider(new THREE.Vector3(cfg.x, ws.y / 2, cfg.z), ws, true, ws.y);
+                this.registerFootprint(cfg.x, cfg.z, ws.x / 2 + 2.5, ws.z / 2 + 2.5);
+                this.buildingConfigs.push({ x: cfg.x, z: cfg.z, w: ws.x, d: ws.z, type: 'city', rot: 0 });
             }
         });
     }
 
-    // ── MODERN RESIDENTIAL SUBURB (From user's Modern House Collection) ──────
+    // ── NORTH-EAST MODERN RESIDENTIAL SUBURB (building_modern_houses.glb) ────
     createModernResidentialDistrict() {
         if (!window.blenderAssetLoader) return;
+        // Cleanly laid out around Suburb Boulevard (x=165) & Cross Street (z=-170) with ZERO overlaps
         const modernConfigs = [
-            // North-East Luxury Residential Neighborhood
-            { idx: 1,  x: 55,  z: -50,  rot: 0,              size: new THREE.Vector3(14, 8, 12) },
-            { idx: 2,  x: 95,  z: -50,  rot: 0,              size: new THREE.Vector3(15, 8, 13) },
-            { idx: 3,  x: 135, z: -55,  rot: Math.PI / 4,    size: new THREE.Vector3(16, 9, 14) },
-            { idx: 4,  x: 55,  z: -95,  rot: Math.PI,        size: new THREE.Vector3(14, 8, 12) },
-            { idx: 5,  x: 95,  z: -100, rot: Math.PI,        size: new THREE.Vector3(15, 9, 13) },
-            { idx: 6,  x: 145, z: -105, rot: -Math.PI / 4,   size: new THREE.Vector3(16, 8, 14) },
-            { idx: 7,  x: 65,  z: -145, rot: 0,              size: new THREE.Vector3(15, 8, 12) },
-            { idx: 8,  x: 110, z: -150, rot: 0,              size: new THREE.Vector3(16, 9, 13) },
-            { idx: 9,  x: 155, z: -155, rot: -Math.PI / 2,   size: new THREE.Vector3(15, 8, 14) },
-            { idx: 10, x: 195, z: -120, rot: -Math.PI / 2,   size: new THREE.Vector3(16, 9, 14) }
+            // South-West Quadrant of NE Suburb (x: 80..135, z: -55..-140)
+            { idx: 0,  x: 92,  z: -62,  rot: 0 },
+            { idx: 1,  x: 132, z: -62,  rot: 0 },
+            { idx: 2,  x: 92,  z: -118, rot: Math.PI },
+            { idx: 3,  x: 132, z: -118, rot: Math.PI },
+            // South-East Quadrant of NE Suburb (x: 200..295, z: -62..-125)
+            { idx: 4,  x: 205, z: -62,  rot: 0 },
+            { idx: 5,  x: 255, z: -62,  rot: 0 },
+            { idx: 6,  x: 205, z: -118, rot: Math.PI },
+            { idx: 7,  x: 255, z: -118, rot: Math.PI },
+            { idx: 8,  x: 300, z: -90,  rot: -Math.PI / 2 },
+            // North-West Quadrant of NE Suburb (x: 85..135, z: -210..-285)
+            { idx: 9,  x: 92,  z: -215, rot: 0 },
+            { idx: 10, x: 132, z: -215, rot: 0 },
+            { idx: 11, x: 112, z: -275, rot: Math.PI },
+            // North-East Quadrant of NE Suburb (x: 205..270, z: -215..-275)
+            { idx: 12, x: 205, z: -215, rot: 0 },
+            { idx: 13, x: 258, z: -215, rot: -Math.PI / 4 },
+            { idx: 14, x: 225, z: -275, rot: Math.PI }
         ];
 
         modernConfigs.forEach(cfg => {
             const h = window.blenderAssetLoader.createModernHouseInstance(cfg.idx, cfg.x, cfg.z, cfg.rot, 1.25);
             if (h) {
                 this.scene.add(h);
-                this.addBoxCollider(new THREE.Vector3(cfg.x, cfg.size.y / 2, cfg.z), cfg.size, false);
-                this.buildingConfigs.push({ x: cfg.x, z: cfg.z, type: 'modern', rot: cfg.rot });
+                const ws = h.userData.worldBoxSize || new THREE.Vector3(15, 9, 13);
+                this.addBoxCollider(new THREE.Vector3(cfg.x, ws.y / 2, cfg.z), ws, true, ws.y);
+                this.registerFootprint(cfg.x, cfg.z, ws.x / 2 + 2.5, ws.z / 2 + 2.5);
+                this.buildingConfigs.push({ x: cfg.x, z: cfg.z, w: ws.x, d: ws.z, type: 'modern', rot: 0 });
             }
         });
     }
 
     createMultiStoryBuildings() {
+        // Enterable multi-floor buildings with interior stairs, balconies & rooftops — zero overlap with GLB districts!
         const buildingConfigs = [
-            // Prominent Roadside Landmarks (Visible from spawn, matching Reference Image 1)
-            { x: 28,  z: -32, type: 'villa', rot: 0 },
-            { x: -32, z: -45, type: 'townhouse', rot: 0 },
-            { x: 32,  z: 38,  type: 'barracks', rot: 0 },
-            { x: -35, z: 32,  type: 'villa', rot: 0 },
+            // Central Crossroads Tactical Hub (near 0,0)
+            { x: 38,  z: -38,  type: 'villa',     rot: 0, w: 16, d: 14 },
+            { x: -42, z: -44,  type: 'townhouse', rot: 0, w: 12, d: 12 },
+            { x: 42,  z: 44,   type: 'barracks',  rot: 0, w: 22, d: 10 },
+            { x: -42, z: 42,   type: 'villa',     rot: 0, w: 16, d: 14 },
 
-            // North-West Residential Sector (Mediterranean Terracotta Villas)
-            { x: -65, z: -75, type: 'villa', rot: 0 },
-            { x: -85, z: -55, type: 'villa', rot: 0 },
-            { x: -50, z: -115, type: 'villa', rot: 0 },
+            // North Hills Compound (along NS Highway North)
+            { x: -42, z: -180, type: 'villa',     rot: 0, w: 16, d: 14 },
+            { x: 40,  z: -195, type: 'townhouse', rot: 0, w: 12, d: 12 },
+            { x: -38, z: -275, type: 'barracks',  rot: 0, w: 22, d: 10 },
+            { x: 42,  z: -285, type: 'villa',     rot: 0, w: 16, d: 14 },
 
-            // Central Tactical Sniping Zone (3-Story Modern Townhouses with rooftop access)
-            { x: -85, z: -35, type: 'townhouse', rot: 0 },
-            { x: -60, z: 55,  type: 'townhouse', rot: 0 },
-            { x: 45,  z: -75, type: 'townhouse', rot: 0 },
-            { x: -105, z: 25, type: 'townhouse', rot: 0 },
+            // South-Central Military Garrison (between EW highway and South Industrial road)
+            { x: -72, z: 95,   type: 'townhouse', rot: 0, w: 12, d: 12 },
+            { x: -65, z: 155,  type: 'barracks',  rot: 0, w: 22, d: 10 },
+            { x: 48,  z: 135,  type: 'townhouse', rot: 0, w: 12, d: 12 },
+            { x: 105, z: 90,   type: 'villa',     rot: 0, w: 16, d: 14 },
+            { x: 105, z: 160,  type: 'barracks',  rot: 0, w: 22, d: 10 },
 
-            // South-West Military Outpost (Barracks)
-            { x: -110, z: -70, type: 'barracks', rot: 0 },
-            { x: -125, z: -45, type: 'barracks', rot: 0 },
-            { x: -75,  z: 105, type: 'barracks', rot: 0 },
-
-            // Eastern Industrial Hangars
-            { x: 120, z: -80, type: 'hangar', rot: 0 },
-            { x: 125, z: 55,  type: 'hangar', rot: 0 }
+            // East Airbase Hangars (flanking West side of Runway x=255)
+            { x: 198, z: 105,  type: 'hangar',    rot: 0, w: 20, d: 28 },
+            { x: 198, z: 225,  type: 'hangar',    rot: 0, w: 20, d: 28 }
         ];
 
         this.buildingConfigs.push(...buildingConfigs);
         buildingConfigs.forEach(cfg => {
             this.buildAccessibleBuilding(cfg.x, cfg.z, cfg.type, cfg.rot);
+            this.registerFootprint(cfg.x, cfg.z, (cfg.w || 16) / 2 + 2.5, (cfg.d || 16) / 2 + 2.5);
         });
     }
 
@@ -1058,47 +1138,54 @@ class WarLandMap {
     }
 
     createIndustrialLandmarks() {
-        // 1. Massive Nuclear Cooling Tower (from Reference Image 1)
+        // 1. Massive Cooling Tower in South Industrial Power Plant
         if (window.blenderAssetLoader && window.blenderAssetLoader.models['cooling_tower']) {
-            const blenderTower = window.blenderAssetLoader.createCoolingTowerInstance(25, -95);
+            const blenderTower = window.blenderAssetLoader.createCoolingTowerInstance(-95, 275);
             if (blenderTower) {
                 this.scene.add(blenderTower);
-                this.addBoxCollider(new THREE.Vector3(25, 24, -95), new THREE.Vector3(36, 48, 36), false);
+                const sz = blenderTower.userData.bboxSize || new THREE.Vector3(34, 46, 34);
+                this.addBoxCollider(new THREE.Vector3(-95, sz.y / 2, 275), sz, true, sz.y);
+                this.registerFootprint(-95, 275, sz.x / 2 + 4, sz.z / 2 + 4);
             }
         }
 
-        // 2. Telecommunication / Radio Tower with blinking beacon
+        // 2. Telecommunication / Radio Tower with blinking beacon (South-West Industrial Ridge)
         const radioGroup = new THREE.Group();
-        radioGroup.position.set(65, 0, -100);
+        radioGroup.position.set(-165, 0, 270);
 
-        const mastGeom = new THREE.CylinderGeometry(0.8, 4.5, 52, 4);
+        const mastGeom = new THREE.CylinderGeometry(0.8, 4.5, 56, 4);
         const mastMat = new THREE.MeshStandardMaterial({ color: 0xDC2626, metalness: 0.7, roughness: 0.3 });
         const mast = new THREE.Mesh(mastGeom, mastMat);
-        mast.position.y = 26;
+        mast.position.y = 28;
         mast.castShadow = true;
         radioGroup.add(mast);
 
-        const beaconGeom = new THREE.SphereGeometry(0.7, 8, 8);
+        const beaconGeom = new THREE.SphereGeometry(0.8, 8, 8);
         const beaconMat = new THREE.MeshBasicMaterial({ color: 0xEF4444 });
         const beacon = new THREE.Mesh(beaconGeom, beaconMat);
-        beacon.position.y = 52.5;
+        beacon.position.y = 56.5;
         radioGroup.add(beacon);
 
         this.scene.add(radioGroup);
-        this.addBoxCollider(radioGroup.position, new THREE.Vector3(6, 52, 6), false);
+        this.addBoxCollider(new THREE.Vector3(-165, 28, 270), new THREE.Vector3(6, 56, 6), true, 56);
+        this.registerFootprint(-165, 270, 8, 8);
     }
 
     createMilitaryHangarsAndContainers() {
-        // Multi-colored Shipping Containers Cluster (Red, Blue, Yellow, Green)
+        // Multi-colored Shipping Containers Cluster (South Port & Airbase Apron)
         const containerColors = [0xDC2626, 0x2563EB, 0xEAB308, 0x16A34A, 0x475569];
         const containerSpawns = [
-            { x: -125, y: 1.3, z: -55, c: containerColors[0] },
-            { x: -125, y: 1.3, z: -48, c: containerColors[1] },
-            { x: -125, y: 3.9, z: -51, c: containerColors[2] }, // Stacked
-            { x: -115, y: 1.3, z: -52, c: containerColors[3] },
-            { x: 85,   y: 1.3, z: -80, c: containerColors[0] },
-            { x: 85,   y: 1.3, z: -73, c: containerColors[1] },
-            { x: 85,   y: 3.9, z: -76, c: containerColors[4] }
+            // South Industrial Port Yard
+            { x: -35, y: 1.3, z: 255, c: containerColors[0] },
+            { x: -35, y: 1.3, z: 262, c: containerColors[1] },
+            { x: -35, y: 3.9, z: 258, c: containerColors[2] }, // Stacked
+            { x: -24, y: 1.3, z: 258, c: containerColors[3] },
+            // East Airbase Cargo Apron
+            { x: 168, y: 1.3, z: 160, c: containerColors[0] },
+            { x: 168, y: 1.3, z: 167, c: containerColors[1] },
+            { x: 168, y: 3.9, z: 163, c: containerColors[4] },
+            { x: 168, y: 1.3, z: 280, c: containerColors[2] },
+            { x: 168, y: 1.3, z: 287, c: containerColors[3] }
         ];
 
         containerSpawns.forEach(cs => {
@@ -1107,25 +1194,28 @@ class WarLandMap {
                 if (bCont) this.scene.add(bCont);
             }
             this.addBoxCollider(new THREE.Vector3(cs.x, cs.y, cs.z), new THREE.Vector3(6.5, 2.6, 2.8), true, cs.y + 1.3);
+            this.registerFootprint(cs.x, cs.z, 4.5, 3.0);
         });
     }
 
     createAircraftWreckageAndVehicles() {
-        // McLaren Supercar on Runway
+        // Gleaming McLaren P1 GTR Supercar parked on the East Airbase Runway!
         if (window.blenderAssetLoader && window.blenderAssetLoader.models['mclaren']) {
-            const mclaren = window.blenderAssetLoader.createMcLarenInstance(75, 0.08, 25, Math.PI / 12);
+            const mclaren = window.blenderAssetLoader.createMcLarenInstance(255, 0.08, 125, Math.PI / 14);
             if (mclaren) {
                 this.scene.add(mclaren);
-                this.addBoxCollider(new THREE.Vector3(75, 0.7, 25), new THREE.Vector3(4.8, 1.4, 2.2), false);
+                this.addBoxCollider(new THREE.Vector3(255, 0.7, 125), new THREE.Vector3(2.3, 1.4, 4.8), true, 1.4);
+                this.registerFootprint(255, 125, 4.5, 5.5);
             }
         }
     }
 
     createWatchtowersAndBunkers() {
         const towerLocs = [
-            { x: -20, z: -115 }, // Northern Perimeter
-            { x: -120, z: 80 },  // South-West Coast
-            { x: 120, z: 90 }    // South-East Pier
+            { x: 0,    z: -340 }, // Northern Highway Checkpoint
+            { x: -210, z: 245 },  // South-West Coast Overlook
+            { x: 155,  z: 295 },  // South-East Airbase Overlook
+            { x: -330, z: 0 }     // Western Highway Outpost
         ];
 
         towerLocs.forEach(loc => {
@@ -1150,98 +1240,120 @@ class WarLandMap {
                 minX: loc.x - 2.5, maxX: loc.x + 2.5,
                 minZ: loc.z - 2.5, maxZ: loc.z + 2.5
             });
+            this.registerFootprint(loc.x, loc.z, 5.0, 8.0);
         });
     }
+
     createFoliageAndProps() {
         if (!window.blenderAssetLoader) return;
 
-        // 1. High-Quality Oak Trees (Detailed Forest & Parklands from user's Tree.fbx)
-        for (let i = 0; i < 75; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const dist = 35 + Math.random() * 270;
+        // Deterministic seeded PRNG so island forests look hand-crafted and consistent every match
+        let seed = 42197;
+        const nextRand = () => {
+            seed = (seed * 1664525 + 1013904223) >>> 0;
+            return seed / 4294967296;
+        };
+
+        // 1. Detailed Oak Trees across parklands, hillsides & forest belts (strict road & building clearance!)
+        let oaksPlaced = 0;
+        for (let attempt = 0; attempt < 260 && oaksPlaced < 72; attempt++) {
+            const angle = nextRand() * Math.PI * 2;
+            const dist = 55 + nextRand() * 405;
             const px = Math.cos(angle) * dist;
             const pz = Math.sin(angle) * dist;
 
-            // Don't spawn on main highways
-            if (Math.abs(px) < 14 || Math.abs(pz) < 14) continue;
-            // Don't spawn inside airport runway or commercial dense block
-            if (px > 125 && px < 165 && pz > 30 && pz < 190) continue;
-            if (px < -50 && px > -170 && pz < -30 && pz > -170) continue;
+            if (!this.isClearForProp(px, pz, 5.5)) continue;
 
-            const tree = window.blenderAssetLoader.createTreeInstance(px, pz, 'oak', 0.85 + Math.random() * 0.4);
-            if (tree) this.scene.add(tree);
+            const scale = 0.85 + nextRand() * 0.4;
+            const tree = window.blenderAssetLoader.createTreeInstance(px, pz, 'oak', scale);
+            if (tree) {
+                this.scene.add(tree);
+                // Solid trunk collider so players & bullets interact cleanly with forest cover
+                this.addBoxCollider(new THREE.Vector3(px, 2.5, pz), new THREE.Vector3(0.95, 5.0, 0.95), true, 5.0);
+                this.registerFootprint(px, pz, 3.2, 3.2);
+                oaksPlaced++;
+            }
         }
 
-        // 2. Coastal Banana Palms (PBR Tropical Foliage from user's Banana_Plant_01.fbx)
-        // Replacing the bad procedural cone palm tree with pristine high-fidelity tropical palms
-        for (let i = 0; i < 55; i++) {
-            const angle = (i / 55) * Math.PI * 2;
-            const dist = 315 + (i % 5) * 8;
+        // 2. Coastal Tropical Palm Ring (46 palms lining golden sandy beaches, skipping Eastern Bridge)
+        for (let i = 0; i < 46; i++) {
+            const angle = (i / 46) * Math.PI * 2;
+            const dist = 468 + (i % 4) * 7;
             const px = Math.cos(angle) * dist;
             const pz = Math.sin(angle) * dist;
 
-            const palm = window.blenderAssetLoader.createTreeInstance(px, pz, 'palm', 1.0 + Math.random() * 0.35);
-            if (palm) this.scene.add(palm);
+            if (!this.isClearForProp(px, pz, 4.0)) continue;
+
+            const palm = window.blenderAssetLoader.createTreeInstance(px, pz, 'palm', 1.0 + nextRand() * 0.35);
+            if (palm) {
+                this.scene.add(palm);
+                this.addBoxCollider(new THREE.Vector3(px, 2.5, pz), new THREE.Vector3(0.8, 5.0, 0.8), true, 5.0);
+            }
         }
 
-        // 3. Residential Villa Front Yard Palms
+        // 3. Modern Suburb & Boulevard Accent Palms
         const resPalms = [
-            { x: 45, z: -40 }, { x: 80, z: -40 }, { x: 125, z: -45 },
-            { x: 45, z: -105 }, { x: 80, z: -110 }, { x: 135, z: -115 },
-            { x: 175, z: -110 }, { x: 100, z: -140 }, { x: 140, z: -145 }
+            { x: 75,  z: -62 },  { x: 152, z: -62 },  { x: 178, z: -62 },
+            { x: 152, z: -120 }, { x: 178, z: -120 }, { x: 152, z: -215 },
+            { x: 178, z: -215 }, { x: 14,  z: -24 },  { x: -14, z: -24 },
+            { x: 14,  z: 70 },   { x: -14, z: 70 },   { x: 14,  z: -135 },
+            { x: -14, z: -135 }, { x: 14,  z: 175 },  { x: -14, z: 175 }
         ];
         resPalms.forEach(p => {
-            const palm = window.blenderAssetLoader.createTreeInstance(p.x, p.z, 'palm', 1.15);
-            if (palm) this.scene.add(palm);
+            if (!this.isClearForProp(p.x, p.z, 1.8)) return;
+            const palm = window.blenderAssetLoader.createTreeInstance(p.x, p.z, 'palm', 1.12);
+            if (palm) {
+                this.scene.add(palm);
+                this.addBoxCollider(new THREE.Vector3(p.x, 2.5, p.z), new THREE.Vector3(0.75, 5.0, 0.75), true, 5.0);
+            }
         });
 
-        // 4. Rock Boulders Across Open Fields
-        for (let i = 0; i < 40; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const dist = 45 + Math.random() * 250;
+        // 4. Natural Rock Boulders Across Open Fields (tactical hard cover with exact colliders)
+        let rocksPlaced = 0;
+        for (let attempt = 0; attempt < 150 && rocksPlaced < 34; attempt++) {
+            const angle = nextRand() * Math.PI * 2;
+            const dist = 60 + nextRand() * 395;
             const px = Math.cos(angle) * dist;
             const pz = Math.sin(angle) * dist;
 
-            if (Math.abs(px) < 14 || Math.abs(pz) < 14) continue;
-            if (px > 125 && px < 165 && pz > 30 && pz < 190) continue;
+            if (!this.isClearForProp(px, pz, 4.5)) continue;
 
-            const rock = window.blenderAssetLoader.createRockInstance(px, pz, 1.0 + Math.random() * 0.7);
-            if (rock) this.scene.add(rock);
+            const scale = 0.95 + nextRand() * 0.65;
+            const rock = window.blenderAssetLoader.createRockInstance(px, pz, scale);
+            if (rock) {
+                this.scene.add(rock);
+                const sz = rock.userData.bboxSize || new THREE.Vector3(2.6 * scale, 1.8 * scale, 2.6 * scale);
+                this.addBoxCollider(new THREE.Vector3(px, sz.y / 2, pz), new THREE.Vector3(sz.x * 0.8, sz.y, sz.z * 0.8), true, sz.y);
+                this.registerFootprint(px, pz, sz.x / 2 + 1.5, sz.z / 2 + 1.5);
+                rocksPlaced++;
+            }
         }
 
-        // 5. Iconic Roadside Supply Airdrop Crate with Radiant Yellow Light Beam
-        const dropCrate = window.blenderAssetLoader.createAirdropInstance(14, -22);
-        if (dropCrate) this.scene.add(dropCrate);
+        // 5. Iconic Roadside Supply Airdrop Crate (FIXED: grounded cleanly at Y=0, pos (18, 0, -24))
+        const dropCrate = window.blenderAssetLoader.createAirdropInstance(18, 0, -24);
+        if (dropCrate) {
+            this.scene.add(dropCrate);
+            this.addBoxCollider(new THREE.Vector3(18, 0.75, -24), new THREE.Vector3(1.6, 1.5, 1.6), true, 1.5);
+        }
 
         // Towering Golden Light Pillar shooting into the sky from the airdrop
-        const beamGeom = new THREE.CylinderGeometry(0.5, 1.2, 80, 16);
+        const beamGeom = new THREE.CylinderGeometry(0.45, 1.15, 80, 14);
         const beamMat = new THREE.MeshBasicMaterial({
             color: 0xFACC15,
             transparent: true,
-            opacity: 0.55,
-            side: THREE.DoubleSide
+            opacity: 0.45,
+            side: THREE.DoubleSide,
+            depthWrite: false
         });
         const lightBeam = new THREE.Mesh(beamGeom, beamMat);
-        lightBeam.position.set(14, 40, -22);
+        lightBeam.position.set(18, 40, -24);
         this.scene.add(lightBeam);
-
-        // Roadside Tropical Palm Trees along Highway
-        const roadPalms = [
-            { x: 12, z: -15 }, { x: -12, z: -25 }, { x: 13, z: -55 },
-            { x: -13, z: 25 }, { x: 12, z: 50 },  { x: -13, z: 75 },
-            { x: 12, z: 120 }, { x: -12, z: 150 }, { x: 12, z: -120 }
-        ];
-        roadPalms.forEach(p => {
-            const palm = window.blenderAssetLoader.createTreeInstance(p.x, p.z, 'palm', 1.1 + Math.random() * 0.25);
-            if (palm) this.scene.add(palm);
-        });
     }
 
     createHorizonMountains() {
-        // Grand 360-degree majestic mountain range on the far horizon
+        // Grand 360-degree majestic mountain range on the far horizon (720m to 960m ring)
         const mountGroup = new THREE.Group();
 
-        // 1. Textures for Mountain slopes (Rocky cliffs & snow-capped peaks)
         const rockCanvas = document.createElement('canvas');
         rockCanvas.width = 256;
         rockCanvas.height = 256;
@@ -1272,24 +1384,22 @@ class WarLandMap {
         });
 
         const lushMat = new THREE.MeshStandardMaterial({
-            color: 0x14532D, // Lush dark pine green
+            color: 0x14532D,
             roughness: 0.85,
             metalness: 0.05,
             flatShading: true
         });
 
-        // 32 Panoramic Mountain Formations around the horizon (520m to 780m radius)
         const count = 32;
         for (let i = 0; i < count; i++) {
             const angle = (i / count) * Math.PI * 2;
-            const dist = 540 + (i % 4) * 60;
+            const dist = 740 + (i % 4) * 65;
             const mx = Math.cos(angle) * dist;
             const mz = Math.sin(angle) * dist;
 
-            const height = 150 + (i % 5) * 32 + (i % 2) * 25; // 150m to 280m soaring peaks!
-            const baseRadius = 120 + (i % 3) * 35;
+            const height = 180 + (i % 5) * 36 + (i % 2) * 28;
+            const baseRadius = 150 + (i % 3) * 40;
 
-            // Mountain cone body with natural asymmetric ridge distortion
             const mGeom = new THREE.ConeGeometry(baseRadius, height, 12, 2, false);
             const posAttr = mGeom.attributes.position;
             for (let v = 0; v < posAttr.count; v++) {
@@ -1297,26 +1407,25 @@ class WarLandMap {
                 if (py < height / 2 - 5) {
                     const px = posAttr.getX(v);
                     const pz = posAttr.getZ(v);
-                    const noise = Math.sin(px * 0.05) * Math.cos(pz * 0.05) * 16;
+                    const noise = Math.sin(px * 0.04) * Math.cos(pz * 0.04) * 18;
                     posAttr.setX(v, px + noise);
                     posAttr.setZ(v, pz + noise);
                 }
             }
             mGeom.computeVertexNormals();
 
-            const mat = (i % 3 === 0) ? rockMat : ((i % 3 === 1) ? lushMat : rockMat);
+            const mat = (i % 3 === 1) ? lushMat : rockMat;
             const peak = new THREE.Mesh(mGeom, mat);
-            peak.position.set(mx, height / 2 - 12, mz);
+            peak.position.set(mx, height / 2 - 14, mz);
             peak.rotation.y = (i * 1.37);
             mountGroup.add(peak);
 
-            // Snow-capped summits on tallest mountains (height >= 185m)
-            if (height >= 185) {
+            if (height >= 215) {
                 const capHeight = height * 0.28;
                 const capRadius = baseRadius * 0.32;
                 const capGeom = new THREE.ConeGeometry(capRadius, capHeight, 10);
                 const capMesh = new THREE.Mesh(capGeom, snowMat);
-                capMesh.position.set(mx, height - 12 - capHeight / 2, mz);
+                capMesh.position.set(mx, height - 14 - capHeight / 2, mz);
                 mountGroup.add(capMesh);
             }
         }
@@ -1324,46 +1433,41 @@ class WarLandMap {
     }
 
     createFloatingBlimp() {
-        // Floating "WARLAND" Airship (Reference Image 1)
         this.blimp = new THREE.Group();
-        this.blimp.position.set(0, 85, -140);
+        this.blimp.position.set(0, 95, -260);
 
         const blimpBodyMat = new THREE.MeshStandardMaterial({ color: 0xF59E0B, metalness: 0.4, roughness: 0.3 });
-        const blimpGeom = new THREE.SphereGeometry(14, 20, 16);
+        const blimpGeom = new THREE.SphereGeometry(15, 20, 16);
         blimpGeom.scale(1.0, 0.7, 2.6);
         const blimpMesh = new THREE.Mesh(blimpGeom, blimpBodyMat);
         this.blimp.add(blimpMesh);
 
-        // Navy Blue side stripe
         const stripeMat = new THREE.MeshStandardMaterial({ color: 0x1E3A8A, roughness: 0.4 });
-        const stripeGeom = new THREE.CylinderGeometry(14.2, 14.2, 4.0, 24, 1, true);
+        const stripeGeom = new THREE.CylinderGeometry(15.2, 15.2, 4.2, 24, 1, true);
         stripeGeom.scale(1.0, 2.4, 0.65);
         stripeGeom.rotateZ(Math.PI / 2);
         const stripe = new THREE.Mesh(stripeGeom, stripeMat);
         this.blimp.add(stripe);
 
-        // Gondola under blimp
         const gondolaMat = new THREE.MeshStandardMaterial({ color: 0x0F172A, roughness: 0.5 });
-        const gondolaGeom = new THREE.BoxGeometry(3.5, 2.5, 12);
+        const gondolaGeom = new THREE.BoxGeometry(3.8, 2.6, 12.5);
         const gondola = new THREE.Mesh(gondolaGeom, gondolaMat);
-        gondola.position.y = -10.5;
+        gondola.position.y = -11.0;
         this.blimp.add(gondola);
 
         this.scene.add(this.blimp);
     }
 
     update(dt) {
-        // 1. Circling Airship Blimp
         if (this.blimp) {
-            this.blimpAngle += dt * 0.05;
-            const bx = Math.cos(this.blimpAngle) * 200;
-            const bz = Math.sin(this.blimpAngle) * 200;
+            this.blimpAngle += dt * 0.04;
+            const bx = Math.cos(this.blimpAngle) * 300;
+            const bz = Math.sin(this.blimpAngle) * 300;
             this.blimp.position.x = bx;
             this.blimp.position.z = bz;
             this.blimp.rotation.y = -this.blimpAngle + Math.PI / 2;
         }
 
-        // 2. Subtle Ocean Wave Motion
         if (this.water) {
             this.waterTime += dt * 1.5;
             this.water.position.y = -0.55 + Math.sin(this.waterTime) * 0.08;
@@ -1490,10 +1594,14 @@ class WarLandMap {
         return { position: finalPos, groundY: groundY, ceilingY: ceilingY };
     }
     generateSpawnPoints() {
-        for (let i = 0; i < 40; i++) {
-            const angle = (i / 40) * Math.PI * 2;
-            const r = 30 + Math.random() * 260;
-            this.spawnPoints.push(new THREE.Vector3(Math.cos(angle) * r, 0, Math.sin(angle) * r));
+        for (let i = 0; i < 48; i++) {
+            const angle = (i / 48) * Math.PI * 2;
+            const r = 40 + Math.random() * 380;
+            const sx = Math.cos(angle) * r;
+            const sz = Math.sin(angle) * r;
+            if (this.isClearForProp(sx, sz, 2.0)) {
+                this.spawnPoints.push(new THREE.Vector3(sx, 0, sz));
+            }
         }
     }
 }

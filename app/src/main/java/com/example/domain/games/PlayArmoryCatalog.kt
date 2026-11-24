@@ -161,7 +161,6 @@ object PlayArmoryCatalog {
     const val SKILL_CHESS_HINT = "skill_chess_hint"
     const val SKILL_LUDO_REROLL = "skill_ludo_reroll"
     const val SKILL_UNDO_PASS = "skill_undo_pass"
-    const val SKILL_FLUX_CHARGE = "skill_flux_charge"
 
     // War Land Character Outfits
     const val WAR_CHAR_COMMANDO = "war_char_commando"
@@ -188,7 +187,6 @@ object PlayArmoryCatalog {
     const val CARD_NAME_CHANGE = "card_name_change"
     const val SKIN_LUDO_AMETHYST = "skin_ludo_amethyst"
     const val SKIN_CHESS_CYBERPUNK = "skin_chess_cyberpunk"
-    const val SKIN_AETHER_NEBULA = "skin_aether_nebula"
 
     val TOURNAMENT_ENTRY_TIERS: List<Double> = listOf(0.0, 20.0, 50.0, 100.0, 250.0)
 
@@ -295,8 +293,8 @@ object PlayArmoryCatalog {
             category = ArmoryItemCategory.SKILL,
             titleEn = "Tactical Hint (x1)",
             titleBn = "ট্যাকটিক্যাল হিন্ট (১x)",
-            descEn = "Reveals the engine's best move in Chess, Reversi, or Connect 4.",
-            descBn = "দাবা, রিভার্সি বা কানেক্ট ফোরে সেরা চাল হাইলাইট করে।",
+            descEn = "Reveals the engine's best move in Chess or Sholo Guti.",
+            descBn = "দাবা বা ষোল গুটি গেমে সেরা চাল হাইলাইট করে।",
             priceGameCoins = 15.0,
             iconGlyph = "💡",
             previewAccentHex = 0xFFF59E0B,
@@ -307,8 +305,8 @@ object PlayArmoryCatalog {
             category = ArmoryItemCategory.SKILL,
             titleEn = "Dice Reroll Shield (x1)",
             titleBn = "ডাইস রিরোল শিল্ড (১x)",
-            descEn = "Instantly reroll an unfavorable Ludo or Aether Crown dice roll.",
-            descBn = "লুডু বা Aether Crown-এ খারাপ ডাইস পড়লে পুনরায় রোল করুন।",
+            descEn = "Instantly reroll an unfavorable Ludo or Snakes & Ladders dice roll.",
+            descBn = "লুডু বা সাপ-সিঁড়িতে খারাপ ডাইস পড়লে পুনরায় রোল করুন।",
             priceGameCoins = 15.0,
             iconGlyph = "🎲",
             previewAccentHex = 0xFF10B981,
@@ -324,18 +322,6 @@ object PlayArmoryCatalog {
             priceGameCoins = 10.0,
             iconGlyph = "↩️",
             previewAccentHex = 0xFF0284C7,
-            isConsumable = true
-        ),
-        ArmoryItem(
-            id = SKILL_FLUX_CHARGE,
-            category = ArmoryItemCategory.SKILL,
-            titleEn = "Aether Flux Surge (x1)",
-            titleBn = "Aether ফ্লাক্স সার্জ (১x)",
-            descEn = "Instantly adds +1 Aether Charge during an Aether Crown match.",
-            descBn = "Aether Crown ম্যাচে সাথে সাথে +১ Aether চার্জ যোগ করে।",
-            priceGameCoins = 20.0,
-            iconGlyph = "⚡",
-            previewAccentHex = 0xFF6D28D9,
             isConsumable = true
         ),
 
@@ -558,17 +544,6 @@ object PlayArmoryCatalog {
             iconGlyph = "♟️",
             previewAccentHex = 0xFF06B6D4,
             validityDays = 30
-        ),
-        ArmoryItem(
-            id = SKIN_AETHER_NEBULA,
-            category = ArmoryItemCategory.BOARD_SKIN,
-            titleEn = "Cosmic Nebula Flux Core",
-            titleBn = "কসমিক নেবুলা ফ্লাক্স কোর",
-            descEn = "Astral deep galaxy ring board skin with floating starlight.",
-            descBn = "গ্যালাক্সি স্টারলাইট রিং ও মহাজাগতিক ফ্লাক্স বোর্ড।",
-            priceGameCoins = 65.0,
-            iconGlyph = "🌌",
-            previewAccentHex = 0xFF6366F1
         )
     )
 
@@ -619,15 +594,6 @@ object PlayArmoryCatalog {
             boardLight = Color(0xFFE0F2FE),
             boardDark = Color(0xFF0369A1),
             feltSurface = Color(0xFF082F49)
-        )
-        SKIN_AETHER_NEBULA -> BoardSkinPalette(
-            id = SKIN_AETHER_NEBULA,
-            frameStart = Color(0xFF1E1B4B),
-            frameEnd = Color(0xFF312E81),
-            accentBorder = Color(0xFFA855F7),
-            boardLight = Color(0xFFF3E8FF),
-            boardDark = Color(0xFF4C1D95),
-            feltSurface = Color(0xFF241442)
         )
         else -> BoardSkinPalette(
             id = SKIN_ROYAL_EMERALD,

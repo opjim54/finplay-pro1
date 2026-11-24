@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>FinPlay Pro • Ultimate 3D Gaming Arena</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800;900&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        :root {
+            --bg-dark: #070B14;
+            --bg-card: rgba(15, 23, 42, 0.75);
+            --border-glow: rgba(56, 189, 248, 0.25);
+            --emerald-accent: #10B981;
+            --gold-accent: #F59E0B;
+            --cyan-accent: #06B6D4;
+            --red-accent: #EF4444;
+            --text-main: #F8FAFC;
+            --text-muted: #94A3B8;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            background-image: 
+                radial-gradient(circle at 15% 20%, rgba(6, 182, 212, 0.12) 0%, transparent 40%),
+                radial-gradient(circle at 85% 75%, rgba(16, 185, 129, 0.12) 0%, transparent 45%),
+                radial-gradient(circle at 50% 50%, rgba(245, 158, 11, 0.05) 0%, transparent 60%);
+            color: var(--text-main);
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            min-height: 100vh;
+            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ── TOP NAVIGATION ────────────────────────── */
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            background: rgba(7, 11, 20, 0.85);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 14px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .brand-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+        }
+
+        .brand-icon {
+            width: 42px;
+            height: 42px;
+            background: linear-gradient(135deg, #059669, #10B981, #06B6D4);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.5);
+            border: 1.5px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .brand-title {
+            font-size: 20px;
+            font-weight: 900;
+            letter-spacing: 0.5px;
+            background: linear-gradient(135deg, #FFFFFF 30%, #38BDF8 70%, #10B981 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .brand-badge {
+            font-size: 10px;
+            font-weight: 800;
+            background: rgba(245, 158, 11, 0.15);
+            color: #FACC15;
+            padding: 2px 8px;
+            border-radius: 12px;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-left: 6px;
+        }
+
+        .user-hud {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .wallet-pill {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1.5px solid rgba(245, 158, 11, 0.4);
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-weight: 800;
+            font-size: 13px;
+            color: #FDE047;
+            box-shadow: 0 2px 10px rgba(245, 158, 11, 0.2);
+        }
+
+        .profile-pill {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1.5px solid rgba(56, 189, 248, 0.3);
+            padding: 5px 14px 5px 6px;
+            border-radius: 24px;
+        }
+
+        .profile-avatar {
+            width: 30px;
+            height: 30px;
+            background: linear-gradient(135deg, #6366F1, #8B5CF6);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 800;
+            color: #FFF;
+        }
+
+        .profile-name {
+            font-size: 13px;
+            font-weight: 700;
+            color: #E2E8F0;
+        }
+
+        /* ── MAIN CONTAINER ────────────────────────── */
+        main {
+            flex: 1;
+            max-width: 1240px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 24px 20px 48px;
+        }
+
+        /* ── FEATURED HERO (WAR LAND) ─────────────── */
+        .hero-banner {
+            position: relative;
+            background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.85));
+            border: 1.5px solid rgba(245, 158, 11, 0.35);
+            border-radius: 24px;
+            overflow: hidden;
+            padding: 40px;
+            margin-bottom: 36px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), 0 0 30px rgba(245, 158, 11, 0.15);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 320px;
+        }
+
+        .hero-banner::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: 
+                radial-gradient(circle at 90% 30%, rgba(239, 68, 68, 0.25) 0%, transparent 60%),
+                radial-gradient(circle at 10% 80%, rgba(16, 185, 129, 0.2) 0%, transparent 50%);
+            pointer-events: none;
+        }
+
+        .hero-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: linear-gradient(90deg, #DC2626, #EF4444);
+            color: #FFF;
+            font-size: 11px;
+            font-weight: 900;
+            padding: 5px 14px;
+            border-radius: 20px;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            width: fit-content;
+            box-shadow: 0 0 16px rgba(239, 68, 68, 0.5);
+        }
+
+        .hero-content {
+            position: relative;
+            z-index: 2;
+            max-width: 680px;
+            margin: 18px 0;
+        }
+
+        .hero-title {
+            font-size: 38px;
+            font-weight: 900;
+            line-height: 1.15;
+            margin-bottom: 12px;
+            background: linear-gradient(135deg, #FFFFFF 40%, #FDE047 80%, #F59E0B 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+
+        .hero-desc {
+            color: #CBD5E1;
+            font-size: 15px;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+
+        .hero-features {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 24px;
+        }
+
+        .feature-badge {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 6px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 700;
+            color: #7DD3FC;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .hero-actions {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+        }
+
+        .btn-play-primary {
+            background: linear-gradient(135deg, #F59E0B, #D97706, #B45309);
+            color: #000;
+            font-size: 16px;
+            font-weight: 900;
+            padding: 14px 34px;
+            border-radius: 16px;
+            border: 2px solid #FEF08A;
+            box-shadow: 0 0 25px rgba(245, 158, 11, 0.6), 0 4px 12px rgba(0,0,0,0.5);
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            letter-spacing: 0.5px;
+            transition: all 0.2s ease;
+        }
+
+        .btn-play-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 35px rgba(245, 158, 11, 0.85);
+            background: linear-gradient(135deg, #FBBF24, #F59E0B);
+        }
+
+        .btn-secondary {
+            background: rgba(15, 23, 42, 0.85);
+            border: 1.5px solid rgba(255, 255, 255, 0.2);
+            color: #F1F5F9;
+            font-size: 14px;
+            font-weight: 700;
+            padding: 14px 24px;
+            border-radius: 16px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .btn-secondary:hover {
+            border-color: #38BDF8;
+            background: rgba(30, 41, 59, 0.9);
+        }
+
+        /* ── SECTION HEADER ───────────────────────── */
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 22px;
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-count {
+            font-size: 12px;
+            font-weight: 700;
+            background: rgba(16, 185, 129, 0.15);
+            color: #34D399;
+            padding: 3px 10px;
+            border-radius: 12px;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        /* ── GAMES GRID ───────────────────────────── */
+        .games-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+            gap: 22px;
+            margin-bottom: 48px;
+        }
+
+        .game-card {
+            background: var(--bg-card);
+            border: 1.5px solid rgba(255, 255, 255, 0.08);
+            border-radius: 20px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(12px);
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .game-card:hover {
+            transform: translateY(-6px);
+            border-color: rgba(56, 189, 248, 0.4);
+            box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6), 0 0 20px rgba(56, 189, 248, 0.2);
+        }
+
+        .card-cover {
+            height: 160px;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .cover-warland {
+            background: linear-gradient(135deg, #7F1D1D, #991B1B, #B45309);
+        }
+        .cover-carrom {
+            background: linear-gradient(135deg, #3B1C0B, #78350F, #B45309);
+        }
+        .cover-ludo {
+            background: linear-gradient(135deg, #064E3B, #047857, #0D9488);
+        }
+        .cover-fruitslash {
+            background: linear-gradient(135deg, #311042, #6B21A8, #C026D3);
+        }
+
+        .cover-icon {
+            font-size: 64px;
+            filter: drop-shadow(0 6px 16px rgba(0,0,0,0.6));
+            transition: transform 0.3s ease;
+        }
+
+        .game-card:hover .cover-icon {
+            transform: scale(1.15) rotate(4deg);
+        }
+
+        .card-tag {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: rgba(0, 0, 0, 0.65);
+            backdrop-filter: blur(8px);
+            padding: 4px 10px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 800;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        .card-body {
+            padding: 18px;
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            justify-content: space-between;
+        }
+
+        .game-name {
+            font-size: 18px;
+            font-weight: 800;
+            margin-bottom: 6px;
+            color: #F8FAFC;
+        }
+
+        .game-genre {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            line-height: 1.4;
+        }
+
+        .card-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-top: 14px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #34D399;
+        }
+
+        .status-dot {
+            width: 7px;
+            height: 7px;
+            background: #10B981;
+            border-radius: 50%;
+            box-shadow: 0 0 8px #10B981;
+        }
+
+        .card-play-btn {
+            background: linear-gradient(135deg, #0284C7, #0369A1);
+            color: #FFF;
+            font-size: 12px;
+            font-weight: 800;
+            padding: 8px 16px;
+            border-radius: 10px;
+            border: 1px solid #38BDF8;
+            box-shadow: 0 0 12px rgba(56, 189, 248, 0.3);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .card-play-btn:hover {
+            background: linear-gradient(135deg, #0EA5E9, #0284C7);
+            box-shadow: 0 0 18px rgba(56, 189, 248, 0.6);
+        }
+
+        /* ── FOOTER ───────────────────────────────── */
+        footer {
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(7, 11, 20, 0.95);
+            padding: 24px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+
+        @media (max-width: 768px) {
+            .hero-banner {
+                padding: 24px;
+            }
+            .hero-title {
+                font-size: 26px;
+            }
+            .brand-badge {
+                display: none;
+            }
+            .wallet-pill {
+                padding: 4px 10px;
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Top Navigation Header -->
+    <header>
+        <a href="/" class="brand-container">
+            <div class="brand-icon">⚡</div>
+            <div>
+                <span class="brand-title">FinPlay Pro</span>
+                <span class="brand-badge">Arena 3D</span>
+            </div>
+        </a>
+
+        <div class="user-hud">
+            <div class="wallet-pill">
+                <span>💰</span>
+                <span id="userCoins">2,500</span>
+            </div>
+            <div class="profile-pill">
+                <div class="profile-avatar">P</div>
+                <span class="profile-name">Warrior_Pro</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main>
+        <!-- Featured Hero: War Land 3D -->
+        <div class="hero-banner">
+            <div>
+                <div class="hero-tag">🔥 FEATURED • 3D BATTLE ROYALE</div>
+                <div class="hero-content">
+                    <h1 class="hero-title">WAR LAND 3D</h1>
+                    <p class="hero-desc">
+                        Upgraded AAA Survival Battle Royale. Jump from the cargo plane into a 720m high-fidelity coastal military island. Traverse downtown city blocks, luxury modern houses, dual-lane highways, and fight 25 intelligent bots with full Mixamo combat animations!
+                    </p>
+                    <div class="hero-features">
+                        <span class="feature-badge">🏝️ 720m Expanded Map</span>
+                        <span class="feature-badge">🏙️ 12 Downtown City Blocks</span>
+                        <span class="feature-badge">🏡 10 Luxury Modern Villas</span>
+                        <span class="feature-badge">🏃 New Sprint & Slide HUD</span>
+                        <span class="feature-badge">⚙️ Advanced HUD Customizer</span>
+                        <span class="feature-badge">🔫 PBR AK47, AWM, Shotgun, Deagle</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="hero-actions">
+                <a href="/warland/" class="btn-play-primary">
+                    <span>⚔️ PLAY WAR LAND NOW</span>
+                </a>
+                <a href="/warland/" target="_blank" class="btn-secondary">
+                    <span>↗ Open in New Tab</span>
+                </a>
+            </div>
+        </div>
+
+        <!-- Section: Games Arena -->
+        <div class="section-header">
+            <div class="section-title">
+                <span>🎮 All FinPlay 3D Games</span>
+                <span class="section-count">4 Playable Games</span>
+            </div>
+        </div>
+
+        <!-- Games Grid -->
+        <div class="games-grid">
+            <!-- 1. War Land 3D -->
+            <a href="/warland/" class="game-card">
+                <div class="card-cover cover-warland">
+                    <div class="cover-icon">🪖</div>
+                    <span class="card-tag">3D BATTLE ROYALE</span>
+                </div>
+                <div class="card-body">
+                    <div>
+                        <h3 class="game-name">War Land 3D</h3>
+                        <p class="game-genre">Tactical Battle Royale with 25 AI Bots, Gloo Walls, PBR weapons, sprinting, and sliding.</p>
+                    </div>
+                    <div class="card-footer">
+                        <div class="status-badge">
+                            <span class="status-dot"></span>
+                            <span>v14.0 Updated</span>
+                        </div>
+                        <span class="card-play-btn">PLAY</span>
+                    </div>
+                </div>
+            </a>
+
+            <!-- 2. Carrom 3D Champion -->
+            <a href="/carrom/" class="game-card">
+                <div class="card-cover cover-carrom">
+                    <div class="cover-icon">🎱</div>
+                    <span class="card-tag">3D BOARD GAME</span>
+                </div>
+                <div class="card-body">
+                    <div>
+                        <h3 class="game-name">Carrom 3D Champion</h3>
+                        <p class="game-genre">Realistic physics striker board game with accurate rim rebounds, pockets, and queen cover mechanics.</p>
+                    </div>
+                    <div class="card-footer">
+                        <div class="status-badge">
+                            <span class="status-dot"></span>
+                            <span>Ready</span>
+                        </div>
+                        <span class="card-play-btn">PLAY</span>
+                    </div>
+                </div>
+            </a>
+
+            <!-- 3. Royal Ludo 3D -->
+            <a href="/ludo/" class="game-card">
+                <div class="card-cover cover-ludo">
+                    <div class="cover-icon">🎲</div>
+                    <span class="card-tag">3D CLASSIC</span>
+                </div>
+                <div class="card-body">
+                    <div>
+                        <h3 class="game-name">Royal Ludo 3D</h3>
+                        <p class="game-genre">4-Player royal wooden board with 3D physics dice roll, animated token traversal, and bot opponents.</p>
+                    </div>
+                    <div class="card-footer">
+                        <div class="status-badge">
+                            <span class="status-dot"></span>
+                            <span>Ready</span>
+                        </div>
+                        <span class="card-play-btn">PLAY</span>
+                    </div>
+                </div>
+            </a>
+
+            <!-- 4. Fruit Slash 3D Ninja -->
+            <a href="/fruitslash/" class="game-card">
+                <div class="card-cover cover-fruitslash">
+                    <div class="cover-icon">🍉</div>
+                    <span class="card-tag">3D ARCADE</span>
+                </div>
+                <div class="card-body">
+                    <div>
+                        <h3 class="game-name">Fruit Slash 3D Ninja</h3>
+                        <p class="game-genre">High-speed fruit slicing with physics splatters, glowing katana blade trails, and bomb hazards.</p>
+                    </div>
+                    <div class="card-footer">
+                        <div class="status-badge">
+                            <span class="status-dot"></span>
+                            <span>Ready</span>
+                        </div>
+                        <span class="card-play-btn">PLAY</span>
+                    </div>
+                </div>
+            </a>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer>
+        <p>⚡ FinPlay Pro Gaming & Esports Platform • Running Live on Localhost</p>
+    </footer>
+
+</body>
+</html>

@@ -328,8 +328,8 @@ class FivePlayerLudoAndTournamentHubTest {
     fun `normalizeGameCategory handles all Arena and Esports categories safely`() {
         assertEquals("FREE_FIRE", FirestoreTournamentRepository.normalizeGameCategory("free fire"))
         assertEquals("LUDO", FirestoreTournamentRepository.normalizeGameCategory("ludo"))
-        assertEquals("AETHER_CROWN", FirestoreTournamentRepository.normalizeGameCategory("Aether Crown"))
-        assertEquals("CONNECT_FOUR", FirestoreTournamentRepository.normalizeGameCategory("connect_four"))
+        assertEquals("SHOLO_GUTI", FirestoreTournamentRepository.normalizeGameCategory("Sholo Guti"))
+        assertEquals("SNAKES_LADDERS", FirestoreTournamentRepository.normalizeGameCategory("snakes_ladders"))
         assertEquals("ESPORTS", FirestoreTournamentRepository.normalizeGameCategory("unknown_title_xyz"))
     }
 
@@ -383,4 +383,89 @@ class FivePlayerLudoAndTournamentHubTest {
         assertEquals(startTs, cloudDoc.startTime)
         assertEquals("LUDO", cloudDoc.gameType)
     }
+
+    @Test
+    fun `TournamentEarningsCalculator computes entry fee vs potential earnings, ROI, and break-even kills accurately`() {
+        // Paid battle royale tournament with explicit prizePool, rank payouts & per-kill rewards
+        val paid = com.example.data.games.Tournament(
+            id = "tour_ff_1",
+            title = "Bermuda Clash Pro",
+            entryFee = 50.0,
+            prizePool = 1000.0,
+            maxSlots = 48,
+            perKillReward = 20.0,
+            prizeRanksJson = """[{"rankLabel":"1st","amount":500},{"rankLabel":"2nd","amount":300},{"rankLabel":"3rd","amount":200}]"""
+        )
+        val est = paid.calculatePotentialEarnings(expectedKills = 4)
+        assertEquals(50.0, est.entryFee, 0.01)
+        assertEquals(1000.0, est.netDistributablePool, 0.01)
+        assertEquals(500.0, est.firstPlacePrize, 0.01)
+        assertEquals(300.0, est.secondPlacePrize, 0.01)
+        assertEquals(200.0, est.thirdPlacePrize, 0.01)
+        assertEquals(80.0, est.killBonusEstimate, 0.01)
+        assertEquals(580.0, est.totalPotentialFirstPlaceEarnings, 0.01)
+        assertEquals(530.0, est.potentialNetProfit, 0.01)
+        assertEquals(1060.0, est.roiPercent, 0.01)
+        assertEquals(11.6, est.returnMultiplier, 0.01)
+        assertEquals(3, est.breakEvenKills) // ceil(50 / 20) = 3 kills
+        assertTrue(est.isPositiveReturn)
+        assertFalse(est.isFreeEntry)
+
+        // Dynamic fallback when prizePool is 0 (auto-derived from entryFee * maxSlots minus commission)
+        val autoPool = com.example.data.games.TournamentEarningsCalculator.calculateEntryVsPotentialEarnings(
+            entryFee = 100.0,
+            prizePool = 0.0,
+            maxSlots = 2,
+            adminCommissionPercent = 10.0
+        )
+        assertEquals(200.0, autoPool.grossPrizePool, 0.01)
+        assertEquals(20.0, autoPool.platformCommissionAmount, 0.01)
+        assertEquals(180.0, autoPool.firstPlacePrize, 0.01)
+        assertEquals(80.0, autoPool.potentialNetProfit, 0.01)
+        assertEquals(1.8, autoPool.returnMultiplier, 0.01)
+
+        // Free entry tournament
+        val freeEst = com.example.data.games.TournamentEarningsCalculator.calculateEntryVsPotentialEarnings(
+            entryFee = 0.0,
+            prizePool = 500.0,
+            maxSlots = 20
+        )
+        assertTrue(freeEst.isFreeEntry)
+        assertEquals(250.0, freeEst.firstPlacePrize, 0.01)
+        assertEquals(250.0, freeEst.potentialNetProfit, 0.01)
+        assertTrue(freeEst.isPositiveReturn)
+    }
+
+    @Test
+    fun `TournamentLeaderboardEntry computes winRatePercent and builds rules-compliant Firestore maps`() {
+        val entry = com.example.data.games.TournamentLeaderboardEntry(
+            id = "uid_champion",
+            userId = "uid_champion",
+            displayName = "Warrior Pro",
+            avatarId = "avatar_monarch",
+            matchPoints = 1850L,
+            matchesPlayed = 4,
+            wins = 3,
+            totalCoinsEarned = 420.0,
+            favoriteGame = "WAR_LAND"
+        )
+        assertEquals(75, entry.winRatePercent)
+
+        val createMap = entry.toFirestoreCreateMap()
+        assertFalse(createMap.containsKey("id"))
+        assertEquals("uid_champion", createMap["userId"])
+        assertEquals("Warrior Pro", createMap["displayName"])
+        assertEquals(1850L, createMap["matchPoints"])
+        assertEquals(4, createMap["matchesPlayed"])
+        assertEquals(3, createMap["wins"])
+        assertEquals("WAR_LAND", createMap["favoriteGame"])
+        assertTrue(createMap.containsKey("createdAt"))
+        assertTrue(createMap.containsKey("updatedAt"))
+
+        val updateMap = entry.toFirestoreUpdateMap()
+        assertFalse(updateMap.containsKey("id"))
+        assertFalse(updateMap.containsKey("createdAt"))
+        assertTrue(updateMap.containsKey("updatedAt"))
+    }
 }
+

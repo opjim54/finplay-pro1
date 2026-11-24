@@ -489,9 +489,17 @@ object ChessEngine {
     }
 
     private fun isInsufficientMaterial(board: List<ChessPiece?>): Boolean {
-        val nonKings = board.filterNotNull().filter { it.type != PieceType.KING }
-        if (nonKings.isEmpty()) return true
-        if (nonKings.size == 1 && (nonKings[0].type == PieceType.KNIGHT || nonKings[0].type == PieceType.BISHOP)) return true
+        val nonKingEntries = board.mapIndexedNotNull { idx, piece ->
+            if (piece != null && piece.type != PieceType.KING) idx to piece else null
+        }
+        if (nonKingEntries.isEmpty()) return true
+        if (nonKingEntries.size == 1 && (nonKingEntries[0].second.type == PieceType.KNIGHT || nonKingEntries[0].second.type == PieceType.BISHOP)) {
+            return true
+        }
+        if (nonKingEntries.size == 2 && nonKingEntries.all { it.second.type == PieceType.BISHOP }) {
+            val colors = nonKingEntries.map { (idx, _) -> ((idx / 8) + (idx % 8)) % 2 }.distinct()
+            if (colors.size == 1) return true
+        }
         return false
     }
 

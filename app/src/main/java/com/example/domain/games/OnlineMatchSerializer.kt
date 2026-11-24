@@ -6,7 +6,7 @@ import kotlinx.serialization.json.Json
 
 /**
  * Compact, deterministic state serialization for real-time Firestore online multiplayer
- * across all 5 FinPlay Pro board games.
+ * across FinPlay Pro arena games.
  */
 object OnlineMatchSerializer {
     private val json = Json {
@@ -156,190 +156,133 @@ object OnlineMatchSerializer {
         )
     }.getOrNull()
 
-    // ---- 3. AETHER CROWN ----
+    // ---- 3. SHOLO GUTI (16 BEADS) ----
     @Serializable
-    private data class AetherTokenWire(val id: Int, val zone: String, val nodeIndex: Int)
-
-    @Serializable
-    private data class AetherWire(
-        val solarTokens: List<AetherTokenWire>,
-        val lunarTokens: List<AetherTokenWire>,
+    private data class SholoGutiWire(
+        val board: String, // 37 chars: '.', 'R', 'G'
         val turn: String,
-        val phase: String,
-        val d1: Int,
-        val d2: Int,
-        val remainingDice: List<Int>,
-        val bridgesPhaseEven: Boolean,
-        val roundCount: Int,
-        val solarCharges: Int,
-        val lunarCharges: Int,
-        val winner: String? = null,
+        val chainedNodeId: Int? = null,
+        val lastFrom: Int? = null,
+        val lastTo: Int? = null,
+        val lastCap: Int? = null,
+        val rubyCaptured: Int = 0,
+        val goldCaptured: Int = 0,
+        val movesWithoutCapture: Int = 0,
+        val turnSequence: Int = 0,
+        val outcome: String = SholoGutiOutcome.ONGOING.name,
         val statusLog: String = ""
     )
 
-    fun encodeAether(state: AetherCrownState): String {
-        val wire = AetherWire(
-            solarTokens = (state.tokens[AetherPlayer.SOLAR] ?: emptyList()).map {
-                AetherTokenWire(it.id, it.zone.name, it.nodeIndex)
-            },
-            lunarTokens = (state.tokens[AetherPlayer.LUNAR] ?: emptyList()).map {
-                AetherTokenWire(it.id, it.zone.name, it.nodeIndex)
-            },
+    fun encodeSholoGuti(state: SholoGutiState): String {
+        val sb = StringBuilder(SholoGutiEngine.NODE_COUNT)
+        state.board.forEach { p ->
+            sb.append(
+                when (p) {
+                    SholoGutiPlayer.RUBY -> 'R'
+                    SholoGutiPlayer.GOLD -> 'G'
+                    null -> '.'
+                }
+            )
+        }
+        val wire = SholoGutiWire(
+            board = sb.toString(),
             turn = state.turn.name,
-            phase = state.phase.name,
-            d1 = state.dice.first,
-            d2 = state.dice.second,
-            remainingDice = state.remainingDice,
-            bridgesPhaseEven = state.bridgesPhaseEven,
-            roundCount = state.roundCount,
-            solarCharges = state.charges[AetherPlayer.SOLAR] ?: 0,
-            lunarCharges = state.charges[AetherPlayer.LUNAR] ?: 0,
-            winner = state.winner?.name,
+            chainedNodeId = state.chainedNodeId,
+            lastFrom = state.lastMove?.from,
+            lastTo = state.lastMove?.to,
+            lastCap = state.lastMove?.capturedNode,
+            rubyCaptured = state.rubyCaptured,
+            goldCaptured = state.goldCaptured,
+            movesWithoutCapture = state.movesWithoutCapture,
+            turnSequence = state.turnSequence,
+            outcome = state.outcome.name,
             statusLog = state.statusLog.take(180)
         )
         return json.encodeToString(wire)
     }
 
-    fun decodeAether(payload: String): AetherCrownState? = runCatching {
-        val wire = json.decodeFromString<AetherWire>(payload)
-        val solar = wire.solarTokens.map {
-            AetherToken(AetherPlayer.SOLAR, it.id, runCatching { AetherZone.valueOf(it.zone) }.getOrDefault(AetherZone.DOCKED), it.nodeIndex)
+    fun decodeSholoGuti(payload: String): SholoGutiState? = runCatching {
+        val wire = json.decodeFromString<SholoGutiWire>(payload)
+        if (wire.board.length != SholoGutiEngine.NODE_COUNT) return null
+        val board = wire.board.map { ch ->
+            when (ch) {
+                'R' -> SholoGutiPlayer.RUBY
+                'G' -> SholoGutiPlayer.GOLD
+                else -> null
+            }
         }
-        val lunar = wire.lunarTokens.map {
-            AetherToken(AetherPlayer.LUNAR, it.id, runCatching { AetherZone.valueOf(it.zone) }.getOrDefault(AetherZone.DOCKED), it.nodeIndex)
-        }
-        AetherCrownState(
-            tokens = mapOf(AetherPlayer.SOLAR to solar, AetherPlayer.LUNAR to lunar),
-            turn = runCatching { AetherPlayer.valueOf(wire.turn) }.getOrDefault(AetherPlayer.SOLAR),
-            playVsBot = false,
-            phase = runCatching { AetherTurnPhase.valueOf(wire.phase) }.getOrDefault(AetherTurnPhase.ROLL_DICE),
-            dice = wire.d1.coerceIn(1, 4) to wire.d2.coerceIn(1, 4),
-            remainingDice = wire.remainingDice,
-            bridgesPhaseEven = wire.bridgesPhaseEven,
-            roundCount = wire.roundCount,
-            charges = mapOf(AetherPlayer.SOLAR to wire.solarCharges, AetherPlayer.LUNAR to wire.lunarCharges),
-            winner = wire.winner?.let { runCatching { AetherPlayer.valueOf(it) }.getOrNull() },
+        SholoGutiState(
+            board = board,
+            turn = runCatching { SholoGutiPlayer.valueOf(wire.turn) }.getOrDefault(SholoGutiPlayer.RUBY),
+            chainedNodeId = wire.chainedNodeId,
+            lastMove = if (wire.lastFrom != null && wire.lastTo != null) {
+                SholoGutiMove(wire.lastFrom, wire.lastTo, wire.lastCap)
+            } else null,
+            rubyCaptured = wire.rubyCaptured,
+            goldCaptured = wire.goldCaptured,
+            movesWithoutCapture = wire.movesWithoutCapture,
+            turnSequence = wire.turnSequence,
+            outcome = runCatching { SholoGutiOutcome.valueOf(wire.outcome) }.getOrDefault(SholoGutiOutcome.ONGOING),
             statusLog = wire.statusLog
         )
     }.getOrNull()
 
-    // ---- 4. REVERSI ----
+    // ---- 7. SNAKES & LADDERS ----
     @Serializable
-    private data class ReversiWire(
-        val board: String, // 64 chars: '.', 'E', 'P'
-        val turn: String,
-        val outcome: String,
-        val lastMove: Int? = null,
-        val lastFlipped: List<Int> = emptyList(),
-        val passedLastTurn: Boolean = false
+    private data class SnakesWire(
+        val p1Pos: Int = 0,
+        val p2Pos: Int = 0,
+        val turnIndex: Int = 0,
+        val lastDice: Int = 1,
+        val winnerIdx: Int? = null,
+        val statusLog: String = "",
+        val turnSequence: Int = 0,
+        val consecutiveSixes: Int = 0
     )
 
-    fun encodeReversi(state: ReversiGameState): String {
-        val sb = StringBuilder(64)
-        state.board.forEach { d ->
-            sb.append(
-                when (d) {
-                    ReversiDisc.EMERALD -> 'E'
-                    ReversiDisc.PEARL -> 'P'
-                    ReversiDisc.EMPTY -> '.'
-                }
-            )
-        }
-        val wire = ReversiWire(
-            board = sb.toString(),
-            turn = state.turn.name,
-            outcome = state.outcome.name,
-            lastMove = state.lastMoveIndex,
-            lastFlipped = state.lastFlippedIndices.toList(),
-            passedLastTurn = state.passedLastTurn
+    fun encodeSnakes(state: SnakesLaddersState): String {
+        val p1 = state.players.getOrNull(0)?.position ?: 0
+        val p2 = state.players.getOrNull(1)?.position ?: 0
+        val wire = SnakesWire(
+            p1Pos = p1,
+            p2Pos = p2,
+            turnIndex = state.currentTurnIndex,
+            lastDice = state.lastDiceValue,
+            winnerIdx = state.winner?.id,
+            statusLog = state.statusLog.take(180),
+            turnSequence = state.turnSequence,
+            consecutiveSixes = state.consecutiveSixes
         )
         return json.encodeToString(wire)
     }
 
-    fun decodeReversi(payload: String): ReversiGameState? = runCatching {
-        val wire = json.decodeFromString<ReversiWire>(payload)
-        if (wire.board.length != 64) return null
-        val board = wire.board.map { ch ->
-            when (ch) {
-                'E' -> ReversiDisc.EMERALD
-                'P' -> ReversiDisc.PEARL
-                else -> ReversiDisc.EMPTY
-            }
-        }
-        ReversiGameState(
-            board = board,
-            turn = runCatching { ReversiDisc.valueOf(wire.turn) }.getOrDefault(ReversiDisc.EMERALD),
-            outcome = runCatching { ReversiOutcome.valueOf(wire.outcome) }.getOrDefault(ReversiOutcome.ONGOING),
-            lastMoveIndex = wire.lastMove,
-            lastFlippedIndices = wire.lastFlipped.toSet(),
-            passedLastTurn = wire.passedLastTurn,
-            emeraldScore = board.count { it == ReversiDisc.EMERALD },
-            pearlScore = board.count { it == ReversiDisc.PEARL }
-        )
-    }.getOrNull()
-
-    // ---- 5. CONNECT FOUR ----
-    @Serializable
-    private data class ConnectFourWire(
-        val board: String, // 42 chars: '.', 'S', 'C'
-        val turn: String,
-        val outcome: String,
-        val lastDrop: Int? = null,
-        val winningCells: List<Int> = emptyList(),
-        val moveCount: Int = 0
-    )
-
-    fun encodeConnectFour(state: ConnectFourState): String {
-        val sb = StringBuilder(42)
-        state.board.forEach { d ->
-            sb.append(
-                when (d) {
-                    ConnectFourDisc.SOLAR -> 'S'
-                    ConnectFourDisc.CRIMSON -> 'C'
-                    ConnectFourDisc.EMPTY -> '.'
-                }
-            )
-        }
-        val wire = ConnectFourWire(
-            board = sb.toString(),
-            turn = state.turn.name,
-            outcome = state.outcome.name,
-            lastDrop = state.lastDropIndex,
-            winningCells = state.winningCells.toList(),
-            moveCount = state.moveCount
-        )
-        return json.encodeToString(wire)
-    }
-
-    fun decodeConnectFour(payload: String): ConnectFourState? = runCatching {
-        val wire = json.decodeFromString<ConnectFourWire>(payload)
-        if (wire.board.length != ConnectFourState.ROWS * ConnectFourState.COLS) return null
-        val board = wire.board.map { ch ->
-            when (ch) {
-                'S' -> ConnectFourDisc.SOLAR
-                'C' -> ConnectFourDisc.CRIMSON
-                else -> ConnectFourDisc.EMPTY
-            }
-        }
-        ConnectFourState(
-            board = board,
-            turn = runCatching { ConnectFourDisc.valueOf(wire.turn) }.getOrDefault(ConnectFourDisc.SOLAR),
-            outcome = runCatching { ConnectFourOutcome.valueOf(wire.outcome) }.getOrDefault(ConnectFourOutcome.ONGOING),
-            lastDropIndex = wire.lastDrop,
-            winningCells = wire.winningCells.toSet(),
-            moveCount = wire.moveCount
+    fun decodeSnakes(payload: String, hostName: String = "Player 1", guestName: String = "Player 2"): SnakesLaddersState? = runCatching {
+        val wire = json.decodeFromString<SnakesWire>(payload)
+        val p1 = SnakesPlayer(0, hostName.ifBlank { "Player 1" }, SnakesLaddersEngine.DEFAULT_COLORS[0], wire.p1Pos, isBot = false)
+        val p2 = SnakesPlayer(1, guestName.ifBlank { "Player 2" }, SnakesLaddersEngine.DEFAULT_COLORS[1], wire.p2Pos, isBot = false)
+        val list = listOf(p1, p2)
+        val winner = wire.winnerIdx?.let { list.getOrNull(it) }
+        SnakesLaddersState(
+            players = list,
+            currentTurnIndex = wire.turnIndex.coerceIn(0, 1),
+            phase = if (winner != null) SnakesPhase.GAME_OVER else SnakesPhase.WAIT_ROLL,
+            lastDiceValue = wire.lastDice.coerceIn(1, 6),
+            winner = winner,
+            statusLog = wire.statusLog,
+            isVsBot = false,
+            turnSequence = wire.turnSequence,
+            consecutiveSixes = wire.consecutiveSixes
         )
     }.getOrNull()
 
     fun initialPayloadForGame(gameType: String): String = when (gameType) {
         "LUDO" -> encodeLudo(LudoEngine.newGame(playerCount = 2, playVsBot = false))
         "CHESS" -> encodeChess(ChessGameState())
-        "AETHER_CROWN" -> encodeAether(AetherCrownEngine.newGame(playVsBot = false))
-        "REVERSI" -> encodeReversi(ReversiEngine.newGame())
-        "CONNECT_FOUR" -> encodeConnectFour(ConnectFourEngine.newGame())
+        "SHOLO_GUTI" -> encodeSholoGuti(SholoGutiEngine.newGame())
+        "SNAKES_LADDERS" -> encodeSnakes(SnakesLaddersEngine.newGame(playerCount = 2, playVsBot = false))
         "CARROM" -> "{}"
-        "SNAKES_LADDERS" -> "{}"
         "FRUIT_SLASH" -> "{}"
+        "WAR_LAND" -> "{}"
         else -> "{}"
     }
 }

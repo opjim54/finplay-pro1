@@ -57,7 +57,20 @@ class PlayWalletRepository(private val db: AppDatabase) {
         const val KEY_WDR_ROCKET = "play_wdr_rocket_enabled"
         const val KEY_WDR_BINANCE = "play_wdr_binance_enabled"
 
-        val ALL_INBUILT_GAME_IDS = listOf("LUDO", "SNAKES_LADDERS", "CARROM", "CHESS", "FRUIT_SLASH", "CONNECT_FOUR", "REVERSI", "AETHER_CROWN")
+        val ALL_INBUILT_GAME_IDS = listOf("LUDO", "SNAKES_LADDERS", "CARROM", "SHOLO_GUTI", "CHESS", "FRUIT_SLASH", "WAR_LAND")
+
+        const val OFFLINE_WIN_COINS = 25.0
+        const val OFFLINE_DRAW_COINS = 12.0
+        const val OFFLINE_LOSS_COINS = 8.0
+        const val ONLINE_FRIEND_WIN_COINS = 75.0
+        const val ONLINE_FRIEND_DRAW_COINS = 35.0
+        const val ONLINE_FRIEND_LOSS_COINS = 20.0
+
+        fun computeMatchCompletionCoins(outcome: GameMatchResult, isOnlineOrFriend: Boolean): Double = when (outcome) {
+            GameMatchResult.WIN -> if (isOnlineOrFriend) ONLINE_FRIEND_WIN_COINS else OFFLINE_WIN_COINS
+            GameMatchResult.DRAW -> if (isOnlineOrFriend) ONLINE_FRIEND_DRAW_COINS else OFFLINE_DRAW_COINS
+            GameMatchResult.LOSS -> if (isOnlineOrFriend) ONLINE_FRIEND_LOSS_COINS else OFFLINE_LOSS_COINS
+        }
 
         const val WALLET_HISTORY_RETENTION_DAYS = 30L
         const val WALLET_HISTORY_RETENTION_MS = WALLET_HISTORY_RETENTION_DAYS * 24L * 60L * 60L * 1000L
@@ -101,9 +114,9 @@ class PlayWalletRepository(private val db: AppDatabase) {
                     gameId = gameId,
                     botAccuracyPercent = when (gameId) {
                         "CHESS" -> 70
-                        "AETHER_CROWN" -> 65
-                        "CARROM" -> 75
-                        else -> 60
+                        "SHOLO_GUTI" -> 72
+                        "CARROM" -> 70
+                        else -> 65
                     },
                     maxConcurrentSeats = 10,
                     multiplayerEnabled = true,
@@ -600,7 +613,7 @@ class PlayWalletRepository(private val db: AppDatabase) {
                 PlayWalletLedgerEntity(
                     ownerUserId = userId,
                     walletBucket = "GAME",
-                    kind = WalletLedgerKind.MATCH_WIN,
+                    kind = WalletLedgerKind.TOURNAMENT_WIN_PRIZE,
                     amountDelta = totalReward,
                     note = "War Land 3D Battle Royale: Rank #$rank ($rankBonus coins) + $kills Kills ($killReward coins)",
                     createdAt = now
@@ -608,6 +621,47 @@ class PlayWalletRepository(private val db: AppDatabase) {
             )
             updated
         }
+    }
+
+    /**
+     * Awards Game Coins for EVERY completed match (free offline OR online/friend).
+     * Playing Online Multiplayer or inviting a Friend grants 3x higher coin rewards!
+     */
+    suspend fun awardMatchCompletionCoins(
+        userId: Long,
+        gameId: String,
+        outcome: GameMatchResult,
+        isOnlineOrFriend: Boolean
+    ): Result<TournamentSettlementReceipt> = runCatching {
+        val coins = computeMatchCompletionCoins(outcome, isOnlineOrFriend)
+        db.withTransaction {
+            val wallet = getWalletOnce(userId)
+            val now = System.currentTimeMillis()
+            val updated = wallet.copy(
+                gameBalance = wallet.gameBalance + coins,
+                updatedAt = now
+            )
+            db.playWalletDao().upsert(updated)
+            val modeLabel = if (isOnlineOrFriend) "Online/Friend 3x Bonus" else "Offline Match Reward"
+            db.playWalletLedgerDao().insert(
+                PlayWalletLedgerEntity(
+                    ownerUserId = userId,
+                    walletBucket = "GAME",
+                    kind = WalletLedgerKind.TOURNAMENT_WIN_PRIZE,
+                    amountDelta = coins,
+                    note = "$gameId ${outcome.name} ($modeLabel)",
+                    createdAt = now
+                )
+            )
+            TournamentSettlementReceipt(
+                gameId = gameId,
+                outcome = outcome,
+                entryFee = 0.0,
+                creditedAmount = coins,
+                creditedWalletBucket = "GAME",
+                updatedWallet = updated
+            )
+        }.also { pruneOldWalletHistory() }
     }
 
     suspend fun equipArmoryItem(userId: Long, itemId: String): Result<PlayWalletEntity> = runCatching {

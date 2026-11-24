@@ -29,7 +29,9 @@ data class SnakesLaddersState(
     val statusLog: String = "Player 1's Turn • Roll Dice",
     val recentActionBanner: String? = null,
     val isVsBot: Boolean = true,
-    val botAccuracy: Int = 75
+    val botAccuracy: Int = 75,
+    val turnSequence: Int = 0,
+    val consecutiveSixes: Int = 0
 ) {
     val currentPlayer: SnakesPlayer get() = players[currentTurnIndex.coerceIn(0, players.lastIndex)]
 }
@@ -83,7 +85,9 @@ object SnakesLaddersEngine {
             winner = null,
             statusLog = "${players[0].name}'s Turn • Roll Dice",
             isVsBot = playVsBot,
-            botAccuracy = botAccuracy
+            botAccuracy = botAccuracy,
+            turnSequence = 0,
+            consecutiveSixes = 0
         )
     }
 
@@ -100,22 +104,35 @@ object SnakesLaddersEngine {
             return MoveResult(state, wasLadder = false, wasSnake = false, intermediatePos = state.currentPlayer.position, finalPos = state.currentPlayer.position)
         }
 
-        val dice = forcedDice ?: Random.nextInt(1, 7)
+        val dice = (forcedDice ?: Random.nextInt(1, 7)).coerceIn(1, 6)
         val curPlayer = state.currentPlayer
         val oldPos = curPlayer.position
+        val nextSixes = if (dice == 6) state.consecutiveSixes + 1 else 0
 
-        // Calculate intermediate landing position
-        var targetPos = if (oldPos == 0) dice else oldPos + dice
-        if (targetPos > 100) {
-            // Cannot overshoot 100; bounce back or stay
-            targetPos = oldPos
+        // Standard rule: 3 consecutive 6s forfeits the 3rd roll and passes turn
+        if (nextSixes >= 3) {
+            val nextIndex = (state.currentTurnIndex + 1) % state.players.size
+            val nextPlayer = state.players[nextIndex]
+            val passState = state.copy(
+                currentTurnIndex = nextIndex,
+                phase = SnakesPhase.WAIT_ROLL,
+                lastDiceValue = dice,
+                statusLog = "${curPlayer.name} rolled three 6s! Turn passes to ${nextPlayer.name}",
+                recentActionBanner = "⚠️ Triple 6! Turn Passed",
+                turnSequence = state.turnSequence + 1,
+                consecutiveSixes = 0
+            )
+            return MoveResult(passState, wasLadder = false, wasSnake = false, intermediatePos = oldPos, finalPos = oldPos)
         }
 
-        val intermediate = targetPos
+        // Calculate intermediate landing position
+        val rawTarget = if (oldPos == 0) dice else oldPos + dice
+        val overshot = rawTarget > 100
+        val intermediate = if (overshot) oldPos else rawTarget
 
-        // Check for Ladder or Snake
-        val ladder = LADDERS.firstOrNull { it.bottom == intermediate }
-        val snake = SNAKES.firstOrNull { it.head == intermediate }
+        // Check for Ladder or Snake (only when token actually moved)
+        val ladder = if (!overshot) LADDERS.firstOrNull { it.bottom == intermediate } else null
+        val snake = if (!overshot) SNAKES.firstOrNull { it.head == intermediate } else null
 
         var finalPos = intermediate
         var wasLadder = false
@@ -130,6 +147,8 @@ object SnakesLaddersEngine {
             finalPos = snake.tail
             wasSnake = true
             actionBanner = "🐍 Bitten by Snake! ${snake.head} ➔ ${snake.tail}"
+        } else if (overshot) {
+            actionBanner = "🎯 Need exact ${100 - oldPos} to win!"
         }
 
         val updatedPlayer = curPlayer.copy(position = finalPos)
@@ -144,21 +163,24 @@ object SnakesLaddersEngine {
                 phase = SnakesPhase.GAME_OVER,
                 winner = updatedPlayer,
                 statusLog = "🏆 ${updatedPlayer.name} Reached 100 & Won the Game!",
-                recentActionBanner = actionBanner
+                recentActionBanner = actionBanner,
+                turnSequence = state.turnSequence + 1,
+                consecutiveSixes = 0
             )
             return MoveResult(winState, wasLadder, wasSnake, intermediate, finalPos)
         }
 
-        // Rolling a 6 grants bonus roll; otherwise advance turn
-        val getsBonusRoll = dice == 6
+        // Rolling a 6 grants bonus roll (even after a ladder or normal move, unless overshot 100)
+        val getsBonusRoll = dice == 6 && !overshot
         val nextIndex = if (getsBonusRoll) state.currentTurnIndex else (state.currentTurnIndex + 1) % state.players.size
         val nextPlayer = updatedPlayers[nextIndex]
 
         val status = when {
-            getsBonusRoll -> "${curPlayer.name} rolled a 6! • Extra Roll!"
+            overshot -> "${curPlayer.name} rolled $dice (needs exact ${100 - oldPos}) • ${nextPlayer.name}'s Turn"
+            getsBonusRoll -> "${curPlayer.name} rolled a 6! • Bonus Roll!"
             wasLadder -> "${curPlayer.name} climbed ladder to $finalPos! • ${nextPlayer.name}'s Turn"
-            wasSnake -> "${curPlayer.name} bitten by snake to $finalPos! • ${nextPlayer.name}'s Turn"
-            else -> "${nextPlayer.name}'s Turn • Roll Dice"
+            wasSnake -> "${curPlayer.name} slid down snake to $finalPos! • ${nextPlayer.name}'s Turn"
+            else -> "${curPlayer.name} moved to $finalPos • ${nextPlayer.name}'s Turn"
         }
 
         val nextState = state.copy(
@@ -167,7 +189,9 @@ object SnakesLaddersEngine {
             phase = SnakesPhase.WAIT_ROLL,
             lastDiceValue = dice,
             statusLog = status,
-            recentActionBanner = actionBanner
+            recentActionBanner = actionBanner,
+            turnSequence = state.turnSequence + 1,
+            consecutiveSixes = if (getsBonusRoll) nextSixes else 0
         )
 
         return MoveResult(nextState, wasLadder, wasSnake, intermediate, finalPos)

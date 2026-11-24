@@ -13,6 +13,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import coil.compose.AsyncImage
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -95,6 +97,7 @@ import com.example.domain.games.FreeFireMapBanner
 import com.example.domain.games.TournamentPrizeCodec
 import com.example.domain.games.TournamentTimeFormatter
 import com.example.ui.viewmodel.MatchmakingScanState
+import com.example.ui.viewmodel.OnlineAuthProfile
 import kotlinx.coroutines.delay
 import java.util.Locale
 
@@ -1183,6 +1186,8 @@ fun GameEntryTierPickerDialog(
 fun MatchmakingScanDialog(
     scanState: MatchmakingScanState,
     isBn: Boolean,
+    onlineAuth: OnlineAuthProfile? = null,
+    avatarGlyph: String = "👑",
     onCancel: () -> Unit
 ) {
     when (scanState) {
@@ -1190,6 +1195,9 @@ fun MatchmakingScanDialog(
         is MatchmakingScanState.ServerBusy -> {
             AlertDialog(
                 onDismissRequest = onCancel,
+                containerColor = Color(0xFF101829),
+                titleContentColor = Color(0xFFF8FAFC),
+                textContentColor = Color(0xFFCBD5E1),
                 icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(36.dp)) },
                 title = { Text(if (isBn) "সার্ভার ব্যস্ত! সিট পূর্ণ" else "Server Busy — Seats Full", fontWeight = FontWeight.ExtraBold) },
                 text = {
@@ -1200,83 +1208,226 @@ fun MatchmakingScanDialog(
                     )
                 },
                 confirmButton = {
-                    Button(onClick = onCancel) { Text(if (isBn) "ঠিক আছে" else "OK, I'll Wait") }
+                    Button(
+                        onClick = onCancel,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF5C451), contentColor = Color(0xFF090E1A))
+                    ) { Text(if (isBn) "ঠিক আছে" else "OK, I'll Wait", fontWeight = FontWeight.ExtraBold) }
                 }
             )
         }
         is MatchmakingScanState.Scanning -> {
             val pulse by rememberInfiniteTransition(label = "radar").animateFloat(
-                initialValue = 0.88f,
-                targetValue = 1.15f,
+                initialValue = 0.90f,
+                targetValue = 1.12f,
                 animationSpec = infiniteRepeatable(tween(650, easing = FastOutSlowInEasing), RepeatMode.Reverse),
                 label = "radarScale"
             )
+            val foundOpponent = scanState.detectedPlayerNames.firstOrNull {
+                !it.equals(onlineAuth?.displayName.orEmpty(), ignoreCase = true)
+            }
             AlertDialog(
                 onDismissRequest = onCancel,
+                containerColor = Color(0xFF101829),
+                titleContentColor = Color(0xFFF5C451),
+                textContentColor = Color(0xFFF8FAFC),
                 title = {
                     Text(
-                        if (isBn) "অনলাইন রিয়েল প্লেয়ার খোঁজা হচ্ছে..." else "Scanning Real Online Players...",
-                        fontWeight = FontWeight.ExtraBold
+                        text = if (isBn) "✦ অনলাইন VS ম্যাচমেকিং ✦" else "✦ ONLINE VS MATCHMAKING ✦",
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 16.sp
                     )
                 },
                 text = {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(72.dp)
-                                .graphicsLayer { scaleX = pulse; scaleY = pulse }
-                                .clip(CircleShape)
-                                .background(Color(0xFF059669).copy(alpha = 0.2f)),
-                            contentAlignment = Alignment.Center
+                        // Dual Side-by-Side VS Showcase Card
+                        Surface(
+                            shape = RoundedCornerShape(18.dp),
+                            color = Color(0xFF141F35),
+                            border = BorderStroke(1.2.dp, Color(0xFFF5C451).copy(alpha = 0.55f)),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(Icons.Default.Radar, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(40.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                // Left Slot: Local Player (Name + Google Profile Photo)
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(64.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF042F2E))
+                                            .border(2.dp, Color(0xFFF5C451), CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (!onlineAuth?.photoUrl.isNullOrBlank()) {
+                                            AsyncImage(
+                                                model = onlineAuth?.photoUrl,
+                                                contentDescription = onlineAuth?.displayName ?: "You",
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        } else {
+                                            Text(avatarGlyph, fontSize = 28.sp)
+                                        }
+                                    }
+                                    Text(
+                                        text = onlineAuth?.displayName ?: (if (isBn) "আপনি" else "You"),
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 12.sp,
+                                        color = Color(0xFFF8FAFC),
+                                        maxLines = 1,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Surface(shape = RoundedCornerShape(50), color = Color(0xFF10B981).copy(alpha = 0.22f)) {
+                                        Text(
+                                            text = if (isBn) "প্রস্তুত" else "READY",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Black,
+                                            color = Color(0xFF6EE7B7),
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+
+                                // Center VS Medallion
+                                Box(
+                                    modifier = Modifier
+                                        .padding(horizontal = 4.dp)
+                                        .size(44.dp)
+                                        .graphicsLayer { scaleX = pulse; scaleY = pulse }
+                                        .clip(CircleShape)
+                                        .background(
+                                            Brush.linearGradient(
+                                                listOf(Color(0xFFF5C451), Color(0xFFD49B27))
+                                            )
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "VS",
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 15.sp,
+                                        color = Color(0xFF090E1A)
+                                    )
+                                }
+
+                                // Right Slot: Live Online Opponent Scanner
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(64.dp)
+                                            .graphicsLayer {
+                                                if (foundOpponent == null) {
+                                                    scaleX = pulse
+                                                    scaleY = pulse
+                                                }
+                                            }
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF042F2E))
+                                            .border(
+                                                2.dp,
+                                                if (foundOpponent != null) Color(0xFF10B981) else Color(0xFF6EE7B7).copy(alpha = 0.55f),
+                                                CircleShape
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (foundOpponent != null) {
+                                            Text("⚔️", fontSize = 26.sp)
+                                        } else {
+                                            Icon(
+                                                Icons.Default.Radar,
+                                                contentDescription = null,
+                                                tint = Color(0xFF10B981),
+                                                modifier = Modifier.size(34.dp)
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        text = foundOpponent ?: (if (isBn) "খোঁজা হচ্ছে..." else "Searching..."),
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 12.sp,
+                                        color = if (foundOpponent != null) Color(0xFF6EE7B7) else Color(0xFF94A3B8),
+                                        maxLines = 1,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(50),
+                                        color = Color(0xFFF5C451).copy(alpha = 0.18f)
+                                    ) {
+                                        Text(
+                                            text = "${scanState.secondsRemaining}s",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Black,
+                                            color = Color(0xFFF5C451),
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
                         }
+
                         Text(
                             "${scanState.gameId.replace("_", " ")} • ${scanState.tierLabel} (৳${scanState.entryFee.toInt()} → Win ৳${scanState.winPrize.toInt()})",
                             fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = Color(0xFFF5C451),
                             textAlign = TextAlign.Center
                         )
-                        Text(
-                            text = if (isBn) "বাকি সময়: ${scanState.secondsRemaining} সেকেন্ড" else "Scanning window: ${scanState.secondsRemaining}s remaining",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.ExtraBold
-                        )
+
                         if (scanState.detectedPlayerNames.isNotEmpty()) {
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
-                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                color = Color(0xFF042F2E),
+                                border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.45f)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
                                     modifier = Modifier.padding(8.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.Groups, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Icon(Icons.Default.Groups, contentDescription = null, tint = Color(0xFF6EE7B7), modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(6.dp))
                                     Text(
-                                        "Online Now: ${scanState.detectedPlayerNames.take(3).joinToString(", ")}",
+                                        "Online Players: ${scanState.detectedPlayerNames.take(3).joinToString(", ")}",
                                         style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFF8FAFC)
                                     )
                                 }
                             }
                         }
+
                         Text(
                             text = if (isBn) "কোনো রিয়েল প্লেয়ার না পাওয়া গেলে স্বয়ংক্রিয়ভাবে Bot (${scanState.botAccuracyFallback}% অ্যাকুরেসি) ম্যাচ শুরু হবে!"
-                            else "If no real player joins in time, Arena Bot (${scanState.botAccuracyFallback}% Accuracy) starts automatically!",
+                            else "If no live challenger joins in time, Arena Bot (${scanState.botAccuracyFallback}% Accuracy) steps in automatically!",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = Color(0xFF94A3B8),
                             textAlign = TextAlign.Center
                         )
                     }
                 },
                 confirmButton = {
-                    OutlinedButton(onClick = onCancel) { Text(if (isBn) "বাতিল" else "Cancel Scan") }
+                    OutlinedButton(
+                        onClick = onCancel,
+                        border = BorderStroke(1.dp, Color(0xFFF5C451).copy(alpha = 0.6f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFF5C451))
+                    ) { Text(if (isBn) "বাতিল" else "Cancel Scan") }
                 }
             )
         }

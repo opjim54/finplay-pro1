@@ -3,19 +3,26 @@ package com.example.ui.screens.games
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import android.os.Handler
+import android.os.Looper
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.webkit.WebViewAssetLoader
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -23,9 +30,11 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.example.data.local.GameMatchResult
 
 class FruitSlashWebBridge(
-    private val onRecordMatch: (outcome: GameMatchResult, score: Int, vsBot: Boolean, botAccuracy: Int) -> Unit,
-    private val onExit: () -> Unit
+    private val getOnRecordMatch: () -> (outcome: GameMatchResult, score: Int, vsBot: Boolean, botAccuracy: Int) -> Unit,
+    private val getOnExit: () -> () -> Unit
 ) {
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     @JavascriptInterface
     fun onMatchEnd(outcomeStr: String, score: Int, vsBot: Boolean, botAccuracy: Int) {
         val outcome = when (outcomeStr.uppercase()) {
@@ -33,23 +42,31 @@ class FruitSlashWebBridge(
             "DRAW" -> GameMatchResult.DRAW
             else -> GameMatchResult.LOSS
         }
-        onRecordMatch(outcome, score, vsBot, botAccuracy)
+        mainHandler.post {
+            getOnRecordMatch().invoke(outcome, score, vsBot, botAccuracy)
+        }
     }
 
     @JavascriptInterface
     fun exitToArena() {
-        onExit()
+        mainHandler.post {
+            getOnExit().invoke()
+        }
     }
 }
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun FruitSlashScreen(
+    mode: String = "classic",
+    botAccuracy: Int = 80,
     onRecordMatch: (outcome: GameMatchResult, score: Int, vsBot: Boolean, botAccuracy: Int) -> Unit = { _, _, _, _ -> },
     onExit: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
+    val currentOnRecordMatch by rememberUpdatedState(onRecordMatch)
+    val currentOnExit by rememberUpdatedState(onExit)
 
     // Lock to portrait for standard fruit ninja slicing feel
     DisposableEffect(Unit) {
@@ -62,10 +79,15 @@ fun FruitSlashScreen(
     }
 
     BackHandler {
-        onExit()
+        currentOnExit()
     }
 
-    val bridge = remember { FruitSlashWebBridge(onRecordMatch, onExit) }
+    val bridge = remember {
+        FruitSlashWebBridge(
+            getOnRecordMatch = { currentOnRecordMatch },
+            getOnExit = { currentOnExit }
+        )
+    }
 
     Box(
         modifier = Modifier
@@ -75,6 +97,10 @@ fun FruitSlashScreen(
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
+                val assetLoader = WebViewAssetLoader.Builder()
+                    .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(ctx))
+                    .build()
+
                 WebView(ctx).apply {
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
@@ -96,10 +122,25 @@ fun FruitSlashScreen(
                     addJavascriptInterface(bridge, "AndroidBridge")
 
                     webChromeClient = WebChromeClient()
-                    webViewClient = object : WebViewClient() {}
+                    webViewClient = object : WebViewClient() {
+                        override fun shouldInterceptRequest(
+                            view: WebView?,
+                            request: WebResourceRequest?
+                        ): WebResourceResponse? {
+                            return request?.url?.let { assetLoader.shouldInterceptRequest(it) }
+                        }
+                    }
 
-                    loadUrl("file:///android_asset/fruitslash/index.html")
+                    val safeMode = mode.trim().lowercase().ifBlank { "classic" }
+                    loadUrl("https://appassets.androidplatform.net/assets/fruitslash/index.html?mode=$safeMode&botAcc=$botAccuracy")
                 }
+            },
+            onRelease = { webView ->
+                webView.stopLoading()
+                webView.removeJavascriptInterface("AndroidBridge")
+                webView.loadUrl("about:blank")
+                webView.clearHistory()
+                webView.destroy()
             }
         )
     }

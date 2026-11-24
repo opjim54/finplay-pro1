@@ -44,9 +44,15 @@ class BotAi {
         this.aimReactionTimer = 0;
         this.strafeDir = 1;
 
-        // Recoil & Animation Variables
+        // Recoil, Grounding & Performance Throttling Variables
         this.recoilZ = 0;
         this.recoilPitch = 0;
+        this.isGrounded = true;
+        this.isDying = false;
+        this.deathTimer = 0;
+        this.animAccumDt = 0;
+        this.animFrameCounter = id % 4;
+        this.posture = 'STAND';
 
         // Visual Mesh (initially hidden inside plane)
         this.mesh = new THREE.Group();
@@ -84,8 +90,8 @@ class BotAi {
                 this.blenderLegL = findBone(bModel, ['mixamorig:LeftUpLeg', 'CC_Base_L_Thigh', 'thigh.L', 'DEF-thigh.L', 'LeftUpLeg', 'Char_Leg_L']);
                 this.blenderLegR = findBone(bModel, ['mixamorig:RightUpLeg', 'CC_Base_R_Thigh', 'thigh.R', 'DEF-thigh.R', 'RightUpLeg', 'Char_Leg_R']);
 
-                if (window.animationSystem) {
-                    window.animationSystem.attachToCharacter(bModel, bModel.userData ? bModel.userData.animations : null);
+                if (window.animationSystem && bModel.userData && bModel.userData.hasSkinnedMesh) {
+                    window.animationSystem.attachToCharacter(bModel);
                 }
             }
         }
@@ -179,16 +185,34 @@ class BotAi {
 
         if (this.hp <= 0) {
             this.eliminate(attackerName);
+        } else if (
+            this.blenderModel &&
+            this.blenderModel.userData &&
+            this.blenderModel.userData.hasSkinnedMesh &&
+            window.animationSystem &&
+            window.animationSystem.isReady
+        ) {
+            window.animationSystem.triggerAction(this.blenderModel, 'HIT', null, 180);
         }
     }
 
     eliminate(attackerName) {
+        if (!this.isAlive) return;
         this.isAlive = false;
-        this.scene.remove(this.mesh);
+        this.isDying = true;
+        this.deathTimer = 1.45;
+        this.velocity.set(0, 0, 0);
 
-        // Drop Free Fire style Death Box
-        if (window.gameEngine && window.gameEngine.lootManager) {
-            window.gameEngine.lootManager.spawnDeathBox(this.position);
+        // Play Death Animation cleanly before removing corpse & spawning Death Box
+        const hasRig = !!(
+            this.blenderModel &&
+            this.blenderModel.userData &&
+            this.blenderModel.userData.hasSkinnedMesh &&
+            window.animationSystem &&
+            window.animationSystem.isReady
+        );
+        if (hasRig) {
+            window.animationSystem.triggerAction(this.blenderModel, 'DEATH', null, 1800);
         }
 
         if (window.hud) {
@@ -205,10 +229,51 @@ class BotAi {
     }
 
     update(dt, player) {
-        if (!this.isAlive) return;
+        // Play Death Animation cleanly before removing mesh & dropping Death Box
+        if (!this.isAlive) {
+            if (this.isDying) {
+                this.deathTimer -= dt;
+                const hasRig = !!(
+                    this.blenderModel &&
+                    this.blenderModel.userData &&
+                    this.blenderModel.userData.hasSkinnedMesh &&
+                    window.animationSystem &&
+                    window.animationSystem.isReady
+                );
+                if (hasRig) {
+                    window.animationSystem.update(dt, this.blenderModel, this, false, false);
+                } else {
+                    // Fall backward smoothly for static models
+                    this.mesh.rotation.x = THREE.MathUtils.lerp(this.mesh.rotation.x, -Math.PI / 2, dt * 6);
+                }
+                if (this.deathTimer <= 0) {
+                    this.isDying = false;
+                    if (window.animationSystem && this.blenderModel) {
+                        window.animationSystem.detachCharacter(this.blenderModel);
+                    }
+                    this.scene.remove(this.mesh);
+                    if (window.gameEngine && window.gameEngine.lootManager) {
+                        window.gameEngine.lootManager.spawnDeathBox(this.position);
+                    }
+                }
+            }
+            return;
+        }
 
         // Waiting inside Airdrop Airplane
         if (this.inPlane) return;
+
+        const distToPlayer = player ? this.position.distanceTo(player.position) : 0;
+        const hasRig = !!(
+            this.blenderModel &&
+            this.blenderModel.userData &&
+            this.blenderModel.userData.hasSkinnedMesh &&
+            window.animationSystem &&
+            window.animationSystem.isReady
+        );
+
+        // Distance visibility culling for high FPS on large 520m map
+        this.mesh.visible = distToPlayer < 245 || this.isSkydiving;
 
         // ── SKYDIVING & PARACHUTE DESCENT ────────────────────────────────────
         if (this.isSkydiving) {
@@ -236,24 +301,28 @@ class BotAi {
                 this.position.y = colResult.groundY;
                 this.isSkydiving = false;
                 this.isParachuteOpen = false;
+                this.isGrounded = true;
                 this.parachuteMount.visible = false;
             }
 
             this.mesh.position.copy(this.position);
             this.mesh.rotation.y = this.rotationY;
 
-            if (window.animationSystem && this.blenderModel && window.animationSystem.isReady) {
+            if (hasRig && this.mesh.visible) {
                 window.animationSystem.update(dt, this.blenderModel, this, false, false);
-            } else if (this.mixer) {
-                this.mixer.update(dt);
             }
             return;
         }
 
-        if (window.animationSystem && this.blenderModel && window.animationSystem.isReady) {
-            window.animationSystem.update(dt, this.blenderModel, this, this.fireCooldown > 0, this.state === 'COMBAT');
-        } else if (this.mixer) {
-            this.mixer.update(dt);
+        // Distance-throttled animation update for massive CPU/GPU savings
+        if (hasRig && this.mesh.visible) {
+            this.animAccumDt += dt;
+            this.animFrameCounter++;
+            const stride = distToPlayer < 60 ? 1 : (distToPlayer < 130 ? 2 : 4);
+            if (this.animFrameCounter % stride === 0) {
+                window.animationSystem.update(this.animAccumDt, this.blenderModel, this, this.fireCooldown > 0.75, this.state === 'COMBAT');
+                this.animAccumDt = 0;
+            }
         }
 
         // Smooth recoil recovery
@@ -295,10 +364,10 @@ class BotAi {
             }
             this.aimReactionTimer = Math.max(0, this.aimReactionTimer - dt);
         } else if (this.stateTimer <= 0) {
-            this.state = (Math.random() < 0.6) ? 'PATROL' : 'COVER';
-            this.stateTimer = 3.0 + Math.random() * 4.0;
+            this.state = (Math.random() < 0.65) ? 'PATROL' : 'COVER';
+            this.stateTimer = 3.5 + Math.random() * 4.5;
             const angle = Math.random() * Math.PI * 2;
-            const radius = 25 + Math.random() * 180;
+            const radius = 35 + Math.random() * 340;
             this.targetPos.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
         }
 
@@ -483,44 +552,44 @@ class BotManager {
     }
 
     spawnBots(count = 25) {
+        // Distributed across all districts of the expanded 520m WarLand island
         const spawns = [
             new THREE.Vector3(-45, 0, -55),
-            new THREE.Vector3(-80, 0, -35),
-            new THREE.Vector3(-100, 0, -60),
-            new THREE.Vector3(-20, 0, -115),
-            new THREE.Vector3(110, 0, -70),
-            new THREE.Vector3(90, 0, 25),
-            new THREE.Vector3(-120, 0, 30),
-            new THREE.Vector3(45, 0, 85),
-            new THREE.Vector3(-60, 0, 110),
-            new THREE.Vector3(130, 0, 95),
-            new THREE.Vector3(15, 0, -20),
-            new THREE.Vector3(75, 0, -60),
-            new THREE.Vector3(-30, 0, 40),
-            new THREE.Vector3(50, 0, -40),
-            new THREE.Vector3(-90, 0, 75),
-            new THREE.Vector3(100, 0, -100),
-            new THREE.Vector3(-130, 0, -90),
-            new THREE.Vector3(70, 0, 120),
-            new THREE.Vector3(-15, 0, 130),
-            new THREE.Vector3(-75, 0, -120),
-            new THREE.Vector3(30, 0, 60),
-            new THREE.Vector3(-110, 0, 0),
-            new THREE.Vector3(60, 0, -130),
-            new THREE.Vector3(-40, 0, 90),
-            new THREE.Vector3(120, 0, 10)
+            new THREE.Vector3(-140, 0, -60),
+            new THREE.Vector3(-220, 0, -140),
+            new THREE.Vector3(-180, 0, -240),
+            new THREE.Vector3(-140, 0, 80),
+            new THREE.Vector3(-230, 0, 120),
+            new THREE.Vector3(95, 0, -90),
+            new THREE.Vector3(170, 0, -120),
+            new THREE.Vector3(240, 0, -160),
+            new THREE.Vector3(130, 0, -240),
+            new THREE.Vector3(220, 0, -260),
+            new THREE.Vector3(210, 0, 80),
+            new THREE.Vector3(260, 0, 180),
+            new THREE.Vector3(220, 0, 270),
+            new THREE.Vector3(60, 0, 120),
+            new THREE.Vector3(-75, 0, 165),
+            new THREE.Vector3(-125, 0, 250),
+            new THREE.Vector3(45, 0, 240),
+            new THREE.Vector3(145, 0, 230),
+            new THREE.Vector3(-280, 0, -40),
+            new THREE.Vector3(310, 0, -40),
+            new THREE.Vector3(0, 0, -260),
+            new THREE.Vector3(0, 0, 260),
+            new THREE.Vector3(-260, 0, 210),
+            new THREE.Vector3(320, 0, 140)
         ];
 
         for (let i = 0; i < count; i++) {
             const spawnPos = spawns[i % spawns.length].clone();
-            spawnPos.x += (Math.random() - 0.5) * 16;
-            spawnPos.z += (Math.random() - 0.5) * 16;
-            // Spawn high in the sky for atmospheric battle royale parachute drop!
-            spawnPos.y = 130 + Math.random() * 25;
+            spawnPos.x += (Math.random() - 0.5) * 20;
+            spawnPos.z += (Math.random() - 0.5) * 20;
+            spawnPos.y = 140 + Math.random() * 28;
 
             const name = BOT_NAMES[i % BOT_NAMES.length];
             const bot = new BotAi(this.scene, this.map, i, name, spawnPos);
-            bot.mesh.visible = false; // Strictly hidden inside plane until jump
+            bot.mesh.visible = false;
             this.bots.push(bot);
         }
     }

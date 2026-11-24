@@ -4,6 +4,7 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -59,6 +60,7 @@ data class CarromGameState(
     val strikerBaselineX: Float = 0.0f,
     val strikerBaselineY: Float = 0.65f,
     val queenStatus: QueenStatus = QueenStatus.ON_BOARD,
+    val queenPendingCoverBy: CarromTurn? = null,
     val queenPocketedThisTurn: Boolean = false,
     val coinPocketedThisTurn: Boolean = false,
     val foulOccurredThisTurn: Boolean = false,
@@ -77,10 +79,11 @@ data class CarromGameState(
 
 object CarromEngine {
     const val BOARD_BOUND = 0.88f
+    const val BASELINE_MAX_X = 0.60f
     const val FRICTION = 0.982f
     const val RESTITUTION = 0.88f
     const val MIN_VELOCITY = 0.005f
-    const val MAX_IMPULSE = 1.65f
+    const val MAX_IMPULSE = 1.05f
 
     val POCKETS = listOf(
         CarromPocket(1, -0.83f, -0.83f), // Top-Left
@@ -163,13 +166,50 @@ object CarromEngine {
 
     fun setStrikerBaselineX(state: CarromGameState, x: Float): CarromGameState {
         if (state.phase != CarromPhase.AIMING) return state
-        val clampedX = x.coerceIn(-0.55f, 0.55f)
+        val desiredX = x.coerceIn(-BASELINE_MAX_X, BASELINE_MAX_X)
+        val safeX = findNonOverlappingBaselineX(
+            pieces = state.pieces,
+            desiredX = desiredX,
+            baselineY = state.strikerBaselineY,
+            preferRight = desiredX >= state.strikerBaselineX
+        )
         val updatedPieces = state.pieces.map { piece ->
             if (piece.type == CarromPieceType.STRIKER) {
-                piece.copy(x = clampedX, y = state.strikerBaselineY, vx = 0f, vy = 0f)
+                piece.copy(x = safeX, y = state.strikerBaselineY, vx = 0f, vy = 0f)
             } else piece
         }
-        return state.copy(strikerBaselineX = clampedX, pieces = updatedPieces)
+        return state.copy(strikerBaselineX = safeX, pieces = updatedPieces)
+    }
+
+    private fun findNonOverlappingBaselineX(
+        pieces: List<CarromPiece>,
+        desiredX: Float,
+        baselineY: Float,
+        preferRight: Boolean = true
+    ): Float {
+        val strikerRadius = 0.082f
+        fun overlaps(testX: Float): Boolean = pieces.any { p ->
+            p.type != CarromPieceType.STRIKER && !p.isPocketed && p.pocketId == -1 && run {
+                val dx = p.x - testX
+                val dy = p.y - baselineY
+                val minDist = p.radius + strikerRadius + 0.004f
+                (dx * dx + dy * dy) < (minDist * minDist)
+            }
+        }
+        if (!overlaps(desiredX)) return desiredX
+        // First scan full remaining baseline in the player's drag direction so striker glides past blocking coins
+        for (step in 1..65) {
+            val delta = step * 0.02f
+            val cand = if (preferRight) desiredX + delta else desiredX - delta
+            if (cand in -BASELINE_MAX_X..BASELINE_MAX_X && !overlaps(cand)) return cand
+        }
+        // Only search the opposite direction if no slot exists ahead
+        for (step in 1..65) {
+            val delta = step * 0.02f
+            val fallback = if (preferRight) desiredX - delta else desiredX + delta
+            if (fallback in -BASELINE_MAX_X..BASELINE_MAX_X && !overlaps(fallback)) return fallback
+        }
+        return desiredX
     }
 
     fun shootStriker(state: CarromGameState, impulseX: Float, impulseY: Float): CarromGameState {
@@ -218,7 +258,11 @@ object CarromEngine {
         var lastType: CarromPieceType? = state.lastPocketedPieceType
         var newQueenStatus = state.queenStatus
 
-        // 1. Move & apply friction
+        val step = (dt * 60f).coerceIn(0.4f, 2.0f)
+        val frictionFactor = FRICTION.toDouble().pow(step.toDouble()).toFloat()
+        var newQueenPendingBy = state.queenPendingCoverBy
+
+        // 1. Move & apply frame-rate normalized friction
         for (i in pieces.indices) {
             val p = pieces[i]
             if (p.isPocketed) continue
@@ -227,8 +271,9 @@ object CarromEngine {
             if (p.pocketId != -1) {
                 val targetPocket = POCKETS.first { it.id == p.pocketId }
                 val newScale = (p.animScale - 3.5f * dt).coerceAtLeast(0f)
-                val newX = p.x + (targetPocket.x - p.x) * 0.25f
-                val newY = p.y + (targetPocket.y - p.y) * 0.25f
+                val lerp = (0.25f * step).coerceAtMost(0.6f)
+                val newX = p.x + (targetPocket.x - p.x) * lerp
+                val newY = p.y + (targetPocket.y - p.y) * lerp
                 if (newScale <= 0.05f) {
                     pieces[i] = p.copy(
                         isPocketed = true,
@@ -244,13 +289,13 @@ object CarromEngine {
                 continue
             }
 
-            var vx = p.vx * FRICTION
-            var vy = p.vy * FRICTION
+            var vx = p.vx * frictionFactor
+            var vy = p.vy * frictionFactor
             if (abs(vx) < MIN_VELOCITY) vx = 0f
             if (abs(vy) < MIN_VELOCITY) vy = 0f
 
-            var x = p.x + vx
-            var y = p.y + vy
+            var x = p.x + vx * step
+            var y = p.y + vy * step
 
             // Cushion wall bounce with restitution
             val bound = BOARD_BOUND - p.radius
@@ -342,46 +387,58 @@ object CarromEngine {
                             lastType = CarromPieceType.STRIKER
                         }
                         CarromPieceType.WHITE -> {
-                            coinPocketed = true
                             lastType = CarromPieceType.WHITE
+                            p1ScoreDelta += 10
+                            p1CountDelta += 1
                             if (state.turn == CarromTurn.PLAYER_1) {
-                                p1ScoreDelta += 10
-                                p1CountDelta += 1
+                                coinPocketed = true
                                 scoreToast = "+10 White Coin!"
-                                if (newQueenStatus == QueenStatus.POCKETED_PENDING_COVER) {
+                                if (newQueenStatus == QueenStatus.POCKETED_PENDING_COVER && newQueenPendingBy == CarromTurn.PLAYER_1) {
                                     newQueenStatus = QueenStatus.COVERED_BY_P1
+                                    newQueenPendingBy = null
                                     p1ScoreDelta += 25
                                     scoreToast = "Queen Covered! +25"
                                 }
                             } else {
-                                p2ScoreDelta += 10
-                                p2CountDelta += 1
-                                scoreToast = "+10 Opponent Coin"
+                                scoreToast = "White Coin Pocketed (+10 P1)"
                             }
                         }
                         CarromPieceType.BLACK -> {
-                            coinPocketed = true
                             lastType = CarromPieceType.BLACK
+                            p2ScoreDelta += 10
+                            p2CountDelta += 1
                             if (state.turn == CarromTurn.PLAYER_2) {
-                                p2ScoreDelta += 10
-                                p2CountDelta += 1
+                                coinPocketed = true
                                 scoreToast = "+10 Black Coin!"
-                                if (newQueenStatus == QueenStatus.POCKETED_PENDING_COVER) {
+                                if (newQueenStatus == QueenStatus.POCKETED_PENDING_COVER && newQueenPendingBy == CarromTurn.PLAYER_2) {
                                     newQueenStatus = QueenStatus.COVERED_BY_P2
+                                    newQueenPendingBy = null
                                     p2ScoreDelta += 25
                                     scoreToast = "Queen Covered! +25"
                                 }
                             } else {
-                                p1ScoreDelta += 10
-                                p1CountDelta += 1
-                                scoreToast = "+10 Opponent Coin"
+                                scoreToast = "Black Coin Pocketed (+10 P2)"
                             }
                         }
                         CarromPieceType.QUEEN -> {
                             queenPocketed = true
                             lastType = CarromPieceType.QUEEN
-                            newQueenStatus = QueenStatus.POCKETED_PENDING_COVER
-                            scoreToast = "Queen Pocketed! Cover It!"
+                            if (coinPocketed) {
+                                // Already pocketed own coin on this same strike — Queen is covered immediately!
+                                if (state.turn == CarromTurn.PLAYER_1) {
+                                    newQueenStatus = QueenStatus.COVERED_BY_P1
+                                    p1ScoreDelta += 25
+                                } else {
+                                    newQueenStatus = QueenStatus.COVERED_BY_P2
+                                    p2ScoreDelta += 25
+                                }
+                                newQueenPendingBy = null
+                                scoreToast = "Queen Covered! +25"
+                            } else {
+                                newQueenStatus = QueenStatus.POCKETED_PENDING_COVER
+                                newQueenPendingBy = state.turn
+                                scoreToast = "Queen Pocketed! Cover Next Shot!"
+                            }
                         }
                     }
                     break
@@ -405,6 +462,7 @@ object CarromEngine {
                 player1PocketedCount = state.player1PocketedCount + p1CountDelta,
                 player2PocketedCount = state.player2PocketedCount + p2CountDelta,
                 queenStatus = newQueenStatus,
+                queenPendingCoverBy = newQueenPendingBy,
                 recentScoreToast = scoreToast,
                 lastPocketedPieceType = lastType
             )
@@ -413,9 +471,14 @@ object CarromEngine {
         // --- Motion has stopped: Settle Turn & Check Game Over ---
         var finalPieces = pieces.map { it.copy() }.toMutableList()
 
-        // Settle Queen Cover failure: If Queen was pending cover and no cover coin was sunk, return Queen to center!
-        if (newQueenStatus == QueenStatus.POCKETED_PENDING_COVER && !coinPocketed) {
+        // Settle Queen Cover rule:
+        // - If Queen was pocketed THIS shot without a foul, player gets the immediate next shot to cover it.
+        // - If Queen was ALREADY pending cover from the previous shot (or a foul occurred) and wasn't covered, return Queen to center!
+        val queenFailedCover = newQueenStatus == QueenStatus.POCKETED_PENDING_COVER &&
+            (foulOccurred || (!queenPocketed && !coinPocketed))
+        if (queenFailedCover) {
             newQueenStatus = QueenStatus.ON_BOARD
+            newQueenPendingBy = null
             finalPieces = finalPieces.map { p ->
                 if (p.type == CarromPieceType.QUEEN) {
                     p.copy(x = 0f, y = 0f, vx = 0f, vy = 0f, isPocketed = false, animScale = 1.0f, pocketId = -1)
@@ -481,11 +544,12 @@ object CarromEngine {
         val nextTurn = if (extraTurn) state.turn else if (state.turn == CarromTurn.PLAYER_1) CarromTurn.PLAYER_2 else CarromTurn.PLAYER_1
         val nextBaselineY = if (nextTurn == CarromTurn.PLAYER_1) 0.65f else -0.65f
 
+        val safeStrikerX = findNonOverlappingBaselineX(finalPieces, 0f, nextBaselineY)
         // Reset striker on baseline for next turn
         finalPieces = finalPieces.map { p ->
             if (p.type == CarromPieceType.STRIKER) {
                 p.copy(
-                    x = 0f,
+                    x = safeStrikerX,
                     y = nextBaselineY,
                     vx = 0f,
                     vy = 0f,
@@ -497,6 +561,8 @@ object CarromEngine {
         }.toMutableList()
 
         val nextStatus = when {
+            newQueenStatus == QueenStatus.POCKETED_PENDING_COVER ->
+                "${if (nextTurn == CarromTurn.PLAYER_1) "Player 1" else "Player 2"} • Pocket a coin to Cover Queen!"
             extraTurn -> "${if (nextTurn == CarromTurn.PLAYER_1) "Player 1" else "Player 2"} Continues • Extra Turn!"
             nextTurn == CarromTurn.PLAYER_1 -> "Player 1's Turn • Aim & Strike"
             state.isVsBot -> "Smart Bot Thinking..."
@@ -507,16 +573,17 @@ object CarromEngine {
             pieces = finalPieces,
             turn = nextTurn,
             phase = CarromPhase.AIMING,
-            strikerBaselineX = 0f,
+            strikerBaselineX = safeStrikerX,
             strikerBaselineY = nextBaselineY,
             coinPocketedThisTurn = false,
             queenPocketedThisTurn = false,
             foulOccurredThisTurn = false,
-            player1Score = state.player1Score + p1ScoreDelta,
-            player2Score = state.player2Score + p2ScoreDelta,
-            player1PocketedCount = state.player1PocketedCount + p1CountDelta,
-            player2PocketedCount = state.player2PocketedCount + p2CountDelta,
+            player1Score = (state.player1Score + p1ScoreDelta).coerceAtLeast(0),
+            player2Score = (state.player2Score + p2ScoreDelta).coerceAtLeast(0),
+            player1PocketedCount = (state.player1PocketedCount + p1CountDelta).coerceAtLeast(0),
+            player2PocketedCount = (state.player2PocketedCount + p2CountDelta).coerceAtLeast(0),
             queenStatus = newQueenStatus,
+            queenPendingCoverBy = newQueenPendingBy,
             statusMessage = nextStatus,
             recentScoreToast = scoreToast
         )
@@ -549,7 +616,7 @@ object CarromBotAi {
         } ?: state.pieces.firstOrNull { !it.isPocketed && it.type != CarromPieceType.STRIKER }
 
         if (targetPiece == null) {
-            return BotShot(0f, 0f, 0.8f)
+            return BotShot(0f, 0f, 0.68f)
         }
 
         // Find nearest pocket to target piece
@@ -578,7 +645,7 @@ object CarromBotAi {
         val jitter = ((Math.random() - 0.5) * 2.0 * maxJitter).toFloat()
         aimAngle += jitter
 
-        val speed = 1.15f + (Math.random() * 0.25f).toFloat()
+        val speed = 0.68f + (Math.random() * 0.22f).toFloat()
         val impulseX = speed * cos(aimAngle)
         val impulseY = speed * sin(aimAngle)
 

@@ -16,6 +16,7 @@ import com.example.data.games.FirestoreTournamentRepository
 import com.example.data.games.MultiplayerRoomDoc
 import com.example.data.games.PlayWalletRepository
 import com.example.data.games.TournamentHubItem
+import com.example.data.games.TournamentLeaderboardEntry
 import com.example.data.games.TournamentSettlementReceipt
 import com.example.data.local.BroadcastNotificationEntity
 import com.example.data.local.ExternalTournamentEntity
@@ -52,7 +53,8 @@ import kotlinx.coroutines.launch
 data class OnlineAuthProfile(
     val uid: String,
     val displayName: String,
-    val email: String
+    val email: String,
+    val photoUrl: String? = null
 )
 
 sealed interface MatchmakingScanState {
@@ -167,6 +169,12 @@ class PlayEarnViewModel(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val tournamentLeaderboard: StateFlow<List<TournamentLeaderboardEntry>> = _onlineAuth
+        .flatMapLatest { auth ->
+            if (auth == null) flowOf(emptyList()) else cloudTournamentRepo.observeTop10Leaderboard()
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     private val _inspectedCloudTournamentId = MutableStateFlow<String?>(null)
     val inspectedCloudRoster: StateFlow<List<CloudTournamentEntryDoc>> = _inspectedCloudTournamentId
         .flatMapLatest { docId ->
@@ -229,7 +237,8 @@ class PlayEarnViewModel(
             displayName = user.displayName?.takeIf { it.isNotBlank() }
                 ?: user.email?.substringBefore('@')?.takeIf { it.isNotBlank() }
                 ?: "FinPlay Player",
-            email = user.email.orEmpty()
+            email = user.email.orEmpty(),
+            photoUrl = user.photoUrl?.toString()
         )
     }
 
@@ -771,11 +780,93 @@ class PlayEarnViewModel(
                                 note = "$gameId Tournament ${outcome.name}"
                             )
                         }
+                        val pointsEarned = when (outcome) {
+                            GameMatchResult.WIN -> (150L + (entryFee * 2.0).toLong()).coerceIn(100L, 1500L)
+                            GameMatchResult.DRAW -> 40L
+                            GameMatchResult.LOSS -> 20L
+                        }
+                        if (_onlineAuth.value != null) {
+                            cloudTournamentRepo.recordLeaderboardMatchPoints(
+                                displayName = _onlineAuth.value?.displayName ?: decoratedPlayerName(),
+                                avatarId = playWallet.value.equippedAvatarId,
+                                pointsEarned = pointsEarned,
+                                isWin = outcome == GameMatchResult.WIN,
+                                coinsEarned = receipt.creditedAmount,
+                                gameType = gameId
+                            )
+                        }
                         repository.triggerAdminMasterDriveAutoSync()
                     }
                 }
                 .onFailure { err ->
                     _feedbackMessage.value = err.message
+                }
+        }
+    }
+
+    /**
+     * Records match points to the live Firestore Top 10 Tournament Leaderboard when signed in.
+     */
+    fun recordCloudLeaderboardPoints(
+        gameType: String,
+        outcome: GameMatchResult,
+        score: Int,
+        coinsEarned: Double = 0.0
+    ) {
+        val auth = _onlineAuth.value ?: return
+        val basePoints = when (outcome) {
+            GameMatchResult.WIN -> 120L
+            GameMatchResult.DRAW -> 45L
+            GameMatchResult.LOSS -> 15L
+        }
+        val scoreBonus = score.coerceIn(0, 3000).toLong() / 5L
+        val totalPoints = (basePoints + scoreBonus).coerceIn(10L, 2500L)
+        viewModelScope.launch {
+            cloudTournamentRepo.recordLeaderboardMatchPoints(
+                displayName = auth.displayName,
+                avatarId = playWallet.value.equippedAvatarId,
+                pointsEarned = totalPoints,
+                isWin = outcome == GameMatchResult.WIN,
+                coinsEarned = coinsEarned,
+                gameType = gameType
+            )
+        }
+    }
+
+    /**
+     * Awards Game Wallet coins after any free completed match.
+     * Online Multiplayer & Invited Friend rooms yield 3x higher coins (75/35/20 vs 25/12/8).
+     */
+    fun awardMatchCompletionCoins(
+        gameId: String,
+        outcome: GameMatchResult,
+        isOnlineOrFriend: Boolean
+    ) {
+        viewModelScope.launch {
+            val uid = currentLocalUserId()
+            if (uid <= 0L) return@launch
+            walletRepo.awardMatchCompletionCoins(uid, gameId, outcome, isOnlineOrFriend)
+                .onSuccess { receipt ->
+                    if (isOnlineOrFriend) {
+                        _lastSettlement.value = receipt
+                    }
+                    val modeTag = if (isOnlineOrFriend) "Online/Friend 3x Bonus" else "Offline Match"
+                    val isBn = com.example.i18n.LanguageManager.gameStrings.value.isBn
+                    _feedbackMessage.value = if (isBn) {
+                        "🪙 ${gameId.replace('_', ' ')} ($modeTag): +${receipt.creditedAmount.toInt()} গেম কয়েন যোগ হয়েছে!"
+                    } else {
+                        "🪙 ${gameId.replace('_', ' ')} ($modeTag): +${receipt.creditedAmount.toInt()} Game Coins earned!"
+                    }
+                    launch {
+                        multiplayerRepo.syncWalletSummaryToCloud(receipt.updatedWallet)
+                        multiplayerRepo.appendCloudWalletLedgerEntry(
+                            walletBucket = "GAME",
+                            kind = if (isOnlineOrFriend) "ONLINE_MATCH_REWARD_3X" else "OFFLINE_MATCH_REWARD",
+                            amountDelta = receipt.creditedAmount,
+                            note = "$gameId ${outcome.name} ($modeTag)"
+                        )
+                        repository.triggerAdminMasterDriveAutoSync()
+                    }
                 }
         }
     }
@@ -858,6 +949,18 @@ class PlayEarnViewModel(
                             amountDelta = totalWon,
                             note = "War Land 3D Battle Royale: Rank #$rank, $kills Kills"
                         )
+                        if (_onlineAuth.value != null) {
+                            val matchPoints = ((kills * 60L) + if (rank == 1) 400L else ((30 - rank).coerceAtLeast(1) * 12L))
+                                .coerceIn(20L, 4000L)
+                            cloudTournamentRepo.recordLeaderboardMatchPoints(
+                                displayName = _onlineAuth.value?.displayName ?: decoratedPlayerName(),
+                                avatarId = playWallet.value.equippedAvatarId,
+                                pointsEarned = matchPoints,
+                                isWin = rank == 1,
+                                coinsEarned = totalWon,
+                                gameType = "WAR_LAND"
+                            )
+                        }
                     }
                     _feedbackMessage.value = "🏆 War Land match finished! Earned +$totalWon Game Coins!"
                     onComplete(totalWon)

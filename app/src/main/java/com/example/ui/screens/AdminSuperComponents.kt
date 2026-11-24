@@ -821,13 +821,12 @@ fun AdminTournamentsAndBotsTab(
                                 listOf(
                                     "FREE_FIRE" to "Free Fire",
                                     "LUDO" to "Ludo (2–5P)",
-                                    "CHESS" to "Chess",
-                                    "AETHER_CROWN" to "Aether Crown",
-                                    "REVERSI" to "Reversi",
-                                    "CONNECT_FOUR" to "Connect 4",
-                                    "CARROM" to "Carrom 3D",
+                                    "SHOLO_GUTI" to "Sholo Guti (16 Beads)",
                                     "SNAKES_LADDERS" to "Snakes & Ladders",
+                                    "CARROM" to "Carrom 3D",
+                                    "CHESS" to "Chess",
                                     "FRUIT_SLASH" to "Fruit Slash 3D",
+                                    "WAR_LAND" to "War Land 3D",
                                     "PUBG" to "PUBG"
                                 ).forEach { (catCode, label) ->
                                     FilterChip(
@@ -846,27 +845,15 @@ fun AdminTournamentsAndBotsTab(
                                                     slots = "20"
                                                     perKill = "0"
                                                 }
+                                                "SHOLO_GUTI" -> {
+                                                    mode = "16 BEADS 1v1"
+                                                    title = "FinPlay Pro Sholo Guti Heritage Cup"
+                                                    slots = "16"
+                                                    perKill = "0"
+                                                }
                                                 "CHESS" -> {
                                                     mode = "BLITZ 1v1"
                                                     title = "Grandmaster Chess Championship"
-                                                    slots = "16"
-                                                    perKill = "0"
-                                                }
-                                                "AETHER_CROWN" -> {
-                                                    mode = "FLUX 1v1"
-                                                    title = "Aether Crown Orbital Cup"
-                                                    slots = "16"
-                                                    perKill = "0"
-                                                }
-                                                "REVERSI" -> {
-                                                    mode = "OTHELLO 1v1"
-                                                    title = "Imperial Reversi Masters"
-                                                    slots = "16"
-                                                    perKill = "0"
-                                                }
-                                                "CONNECT_FOUR" -> {
-                                                    mode = "KNOCKOUT"
-                                                    title = "Crown Connect 4 Clash"
                                                     slots = "16"
                                                     perKill = "0"
                                                 }
@@ -887,6 +874,12 @@ fun AdminTournamentsAndBotsTab(
                                                     title = "Fruit Slash 3D Blade Tournament"
                                                     slots = "24"
                                                     perKill = "0"
+                                                }
+                                                "WAR_LAND" -> {
+                                                    mode = "3D ROYALE"
+                                                    title = "War Land 3D Survival Cup"
+                                                    slots = "32"
+                                                    perKill = "10"
                                                 }
                                                 else -> {
                                                     mode = "SQUAD"

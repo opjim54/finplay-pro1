@@ -139,6 +139,7 @@ dependencies {
   implementation(libs.androidx.glance.material3)
   implementation(libs.zxing.core)
   implementation(libs.pdfbox.android)
+  implementation(libs.androidx.webkit)
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)

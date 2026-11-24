@@ -83,8 +83,10 @@ import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.games.CloudTournamentDoc
 import com.example.data.games.CloudTournamentEntryDoc
+import com.example.data.games.TournamentEarningsCalculator
 import com.example.data.games.TournamentHubItem
 import com.example.data.games.TournamentHubMerger
+import com.example.data.games.TournamentLeaderboardEntry
 import com.example.data.games.TournamentRosterMember
 import com.example.data.local.ExternalTournamentEntity
 import com.example.data.local.ExternalTournamentEntryEntity
@@ -111,6 +113,7 @@ fun TournamentHubView(
     allLocalEntries: List<ExternalTournamentEntryEntity>,
     joinedCloudEntries: Map<String, CloudTournamentEntryDoc>,
     inspectedCloudRoster: List<CloudTournamentEntryDoc>,
+    tournamentLeaderboard: List<TournamentLeaderboardEntry> = emptyList(),
     onlineAuth: OnlineAuthProfile?,
     currentUserId: Long,
     wallet: PlayWalletEntity,
@@ -303,6 +306,16 @@ fun TournamentHubView(
             }
         }
 
+        // ---- 2B. REAL-TIME TOP 10 TOURNAMENT LEADERBOARD (FIRESTORE) ----
+        item(key = "hub_top10_leaderboard") {
+            TournamentLeaderboardSection(
+                entries = tournamentLeaderboard,
+                onlineAuth = onlineAuth,
+                isBn = isBn,
+                onSignInGoogle = onSignInGoogle
+            )
+        }
+
         // ---- 3. ANTI-CHEAT DIRECTIVE ----
         item(key = "hub_anticheat_directive") {
             Surface(
@@ -343,10 +356,12 @@ fun TournamentHubView(
                 "ALL" to (if (isBn) "সব গেম" else "All Games"),
                 "FREE_FIRE" to "Free Fire",
                 "LUDO" to (if (isBn) "লুডু ২–৫P" else "Ludo 2–5P"),
+                "SHOLO_GUTI" to (if (isBn) "ষোল গুটি" else "Sholo Guti"),
+                "SNAKES_LADDERS" to (if (isBn) "সাপ-লুডু" else "Snakes & Ladders"),
+                "CARROM" to (if (isBn) "ক্যারম 3D" else "Carrom 3D"),
                 "CHESS" to (if (isBn) "দাবা" else "Chess"),
-                "AETHER_CROWN" to "Aether Crown",
-                "REVERSI" to "Reversi",
-                "CONNECT_FOUR" to "Connect 4"
+                "FRUIT_SLASH" to (if (isBn) "ফ্রুট স্ল্যাশ" else "Fruit Slash"),
+                "WAR_LAND" to (if (isBn) "ওয়ার ল্যান্ড" else "War Land")
             )
             Row(
                 modifier = Modifier
@@ -665,6 +680,29 @@ fun TournamentHubView(
                             HubStatTile("ENTRY", if (item.entryFee <= 0) "FREE" else "৳${item.entryFee.toInt()}", Color(0xFF38BDF8), Modifier.weight(1f))
                         }
 
+                        // Entry Fee vs. Potential Earnings Calculator Summary
+                        val earningsEstimate = remember(
+                            item.entryFee,
+                            item.prizePool,
+                            item.maxSlots,
+                            item.adminCommissionPercent,
+                            item.perKillReward,
+                            item.prizeRanksJson
+                        ) {
+                            TournamentEarningsCalculator.calculateEntryVsPotentialEarnings(
+                                entryFee = item.entryFee,
+                                prizePool = item.prizePool,
+                                maxSlots = item.maxSlots,
+                                adminCommissionPercent = item.adminCommissionPercent,
+                                perKillReward = item.perKillReward,
+                                prizeRanksJson = item.prizeRanksJson
+                            )
+                        }
+                        TournamentEarningsBreakdownBanner(
+                            estimate = earningsEstimate,
+                            isBn = isBn
+                        )
+
                         // Multi-Rank Prizes
                         if (rankPrizes.isNotEmpty()) {
                             FlowRow(
@@ -880,8 +918,18 @@ fun TournamentHubView(
             title = { Text("Join ${item.title}", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val joinEstimate = remember(item.key) {
+                        TournamentEarningsCalculator.calculateEntryVsPotentialEarnings(
+                            entryFee = item.entryFee,
+                            prizePool = item.prizePool,
+                            maxSlots = item.maxSlots,
+                            adminCommissionPercent = item.adminCommissionPercent,
+                            perKillReward = item.perKillReward,
+                            prizeRanksJson = item.prizeRanksJson
+                        )
+                    }
                     Text(
-                        "Entry Fee: ৳${item.entryFee.toInt()} • Playable Balance: ৳${(wallet.tournamentBalance + wallet.winningBalance).toInt()}",
+                        "Entry Fee: ৳${item.entryFee.toInt()} • 1st Prize: ৳${joinEstimate.firstPlacePrize.toInt()} (${String.format("%.1fx", joinEstimate.returnMultiplier)}) • Balance: ৳${(wallet.tournamentBalance + wallet.winningBalance).toInt()}",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary
                     )

@@ -1,84 +1,88 @@
-// War Land 3D - Advanced Animation System v3.0 (Smooth In-Place Locomotion)
-// Full FBX/GLB animation integration with state machine, retargeting & blending
-// Eliminates root-motion drift for silky smooth 60fps running without snapping
+// War Land 3D - Complete Animation Retargeting & State Machine System (v4.0)
+// Integrates all 22 clips from anims_combat_pack.glb with automatic bone-prefix retargeting,
+// root-motion drift elimination, speed-synced locomotion, and layered combat/action priority locks.
 
 class AnimationSystem {
     constructor() {
-        // Animation clip registry: maps state → animation name in GLB file
-        this.clipRegistry = {};
-
-        // Runtime mixer per character instance
         this.mixers = new WeakMap();
         this.actions = new WeakMap();
         this.currentStates = new WeakMap();
-        this.blendWeights = new WeakMap();
+        this.actionLocks = new WeakMap(); // { state, until }
+        this.retargetCache = new Map();   // prefix -> { stateName: AnimationClip }
 
-        // Animation state machine definition
+        // Complete State Machine Configuration
         this.states = {
             // LOCOMOTION
-            IDLE:              { priority: 0, loop: true,  blendIn: 0.22, timeScale: 1.0 },
-            WALK:              { priority: 1, loop: true,  blendIn: 0.18, timeScale: 1.05 },
-            WALK_BACK:         { priority: 1, loop: true,  blendIn: 0.18, timeScale: 1.05 },
-            WALK_LEFT:         { priority: 1, loop: true,  blendIn: 0.18, timeScale: 1.05 },
-            WALK_RIGHT:        { priority: 1, loop: true,  blendIn: 0.18, timeScale: 1.05 },
-            RUN:               { priority: 2, loop: true,  blendIn: 0.15, timeScale: 1.15 },
-            SPRINT:            { priority: 3, loop: true,  blendIn: 0.12, timeScale: 1.30 },
+            IDLE:              { priority: 0, loop: true,  blendIn: 0.20, timeScale: 1.0 },
+            WALK:              { priority: 1, loop: true,  blendIn: 0.16, timeScale: 1.0, refSpeed: 4.5 },
+            WALK_BACK:         { priority: 1, loop: true,  blendIn: 0.16, timeScale: 1.0, refSpeed: 4.0 },
+            WALK_LEFT:         { priority: 1, loop: true,  blendIn: 0.16, timeScale: 1.0, refSpeed: 4.2 },
+            WALK_RIGHT:        { priority: 1, loop: true,  blendIn: 0.16, timeScale: 1.0, refSpeed: 4.2 },
+            RUN:               { priority: 2, loop: true,  blendIn: 0.14, timeScale: 1.05, refSpeed: 7.5 },
+            SPRINT:            { priority: 3, loop: true,  blendIn: 0.12, timeScale: 1.15, refSpeed: 12.0 },
             // AIRBORNE
-            JUMP:              { priority: 5, loop: false, blendIn: 0.10, timeScale: 1.2 },
-            FALL:              { priority: 4, loop: true,  blendIn: 0.15, timeScale: 1.0 },
-            LAND:              { priority: 5, loop: false, blendIn: 0.10, timeScale: 1.2 },
+            JUMP:              { priority: 5, loop: false, blendIn: 0.08, timeScale: 1.15 },
+            JUMP_BACK:         { priority: 5, loop: false, blendIn: 0.08, timeScale: 1.1 },
+            FALL:              { priority: 4, loop: true,  blendIn: 0.14, timeScale: 0.9 },
+            LAND:              { priority: 5, loop: false, blendIn: 0.06, timeScale: 1.4 },
             // POSTURE
-            CROUCH_IDLE:       { priority: 2, loop: true,  blendIn: 0.20, timeScale: 1.0 },
-            CROUCH_WALK:       { priority: 3, loop: true,  blendIn: 0.18, timeScale: 1.1 },
-            PRONE_IDLE:        { priority: 2, loop: true,  blendIn: 0.20, timeScale: 1.0 },
-            PRONE_MOVE:        { priority: 3, loop: true,  blendIn: 0.18, timeScale: 1.1 },
-            // SLIDING
-            SLIDE:             { priority: 6, loop: false, blendIn: 0.10, timeScale: 1.2 },
-            SLIDE_LOOP:        { priority: 6, loop: true,  blendIn: 0.10, timeScale: 1.0 },
+            CROUCH_IDLE:       { priority: 2, loop: true,  blendIn: 0.18, timeScale: 0.04 }, // Hold crouched pose cleanly
+            CROUCH_WALK:       { priority: 3, loop: true,  blendIn: 0.15, timeScale: 1.05, refSpeed: 3.8 },
+            PRONE_IDLE:        { priority: 2, loop: true,  blendIn: 0.20, timeScale: 0.03 }, // Hold prone pose cleanly
+            PRONE_MOVE:        { priority: 3, loop: true,  blendIn: 0.16, timeScale: 1.1, refSpeed: 2.0 },
+            PRONE_FIRE:        { priority: 7, loop: true,  blendIn: 0.06, timeScale: 1.25 },
+            // SLIDING & VAULTING
+            SLIDE:             { priority: 6, loop: false, blendIn: 0.08, timeScale: 1.05 },
+            SLIDE_LOOP:        { priority: 6, loop: true,  blendIn: 0.08, timeScale: 1.0 },
+            WALL_CLIMB:        { priority: 6, loop: true,  blendIn: 0.12, timeScale: 1.1 },
             // COMBAT
-            AIM_IDLE:          { priority: 4, loop: true,  blendIn: 0.15, timeScale: 1.0 },
-            FIRE:              { priority: 7, loop: false, blendIn: 0.05, timeScale: 1.4 },
-            RELOAD:            { priority: 6, loop: false, blendIn: 0.12, timeScale: 1.1 },
-            GRENADE_THROW:     { priority: 6, loop: false, blendIn: 0.10, timeScale: 1.2 },
+            AIM_IDLE:          { priority: 4, loop: true,  blendIn: 0.14, timeScale: 0.85 },
+            FIRE:              { priority: 7, loop: true,  blendIn: 0.05, timeScale: 1.35 },
+            RELOAD:            { priority: 6, loop: false, blendIn: 0.10, timeScale: 1.1 },
+            GRENADE_THROW:     { priority: 7, loop: false, blendIn: 0.08, timeScale: 1.25 },
             // HIT / DEATH
-            HIT:               { priority: 8, loop: false, blendIn: 0.06, timeScale: 1.3 },
-            DEATH:             { priority: 9, loop: false, blendIn: 0.12, timeScale: 1.0 },
-            DEATH_PRONE:       { priority: 9, loop: false, blendIn: 0.12, timeScale: 1.0 },
-            // SWIMMING
+            HIT:               { priority: 8, loop: false, blendIn: 0.05, timeScale: 1.4 },
+            DEATH:             { priority: 9, loop: false, blendIn: 0.10, timeScale: 1.0 },
+            DEATH_PRONE:       { priority: 9, loop: false, blendIn: 0.10, timeScale: 1.0 },
+            // SWIMMING & AERIAL DEPLOYMENT
             SWIM:              { priority: 3, loop: true,  blendIn: 0.22, timeScale: 1.1 },
-            // SPECIAL
-            SKYDIVE:           { priority: 4, loop: true,  blendIn: 0.20, timeScale: 1.0 },
-            PARACHUTE:         { priority: 4, loop: true,  blendIn: 0.25, timeScale: 1.0 },
+            SWIM_IDLE:         { priority: 3, loop: true,  blendIn: 0.22, timeScale: 0.9 },
+            SKYDIVE:           { priority: 4, loop: true,  blendIn: 0.18, timeScale: 0.8 },
+            PARACHUTE:         { priority: 4, loop: true,  blendIn: 0.22, timeScale: 0.7 },
         };
 
-        // Animation name mappings from downloaded FBX pack names
+        // Exact mappings to all 22 clips inside assets/animations/anims_combat_pack.glb
         this.animNameMap = {
-            IDLE:          ['idle', 'rifle aiming idle', 'Standing Idle', 'Idle', 'T-Pose'],
-            WALK:          ['walk', 'Walking', 'walking', 'start walking', 'Rifle Walk'],
-            WALK_BACK:     ['walk_backwards', 'walking backwards', 'Backwards Rifle Walk', 'run backwards'],
-            WALK_LEFT:     ['strafe_left', 'strafe', 'Strafe Left', 'Left Strafe'],
-            WALK_RIGHT:    ['strafe_right', 'strafe (2)', 'Strafe Right', 'Right Strafe'],
-            RUN:           ['run', 'Running', 'Run', 'running', 'rifle run'],
-            SPRINT:        ['sprint', 'Sprint', 'Running (1)', 'Idle To Running', 'Turn To Running'],
-            JUMP:          ['jump', 'jump_forward', 'Running Jump', 'Jump', 'Jumping'],
-            FALL:          ['jump_backward', 'fall', 'Fall', 'Falling'],
-            LAND:          ['land', 'Landing', 'stop walking', 'idle'],
-            CROUCH_IDLE:   ['crouch_walk', 'Rifle Crouch Walk To Kneel', 'Crouch Idle'],
-            CROUCH_WALK:   ['crouch_walk', 'Rifle Kneel To Prone', 'Crouch Walk'],
-            PRONE_IDLE:    ['prone_forward', 'Prone Forward', 'Prone Idle'],
-            PRONE_MOVE:    ['prone_forward', 'Moving Backward In Prone Position'],
-            SLIDE:         ['slide', 'Sprint To Backslide', 'Slide'],
-            SLIDE_LOOP:    ['slide', 'Slide Loop'],
-            AIM_IDLE:      ['idle', 'rifle aiming idle', 'Aim Idle', 'Pistol Walk Backward'],
-            FIRE:          ['fire', 'firing rifle', 'prone_fire', 'Fire'],
-            RELOAD:        ['Grab And Put Back Rifle', 'Reload', 'reload'],
-            GRENADE_THROW: ['throw_grenade', 'Throw Grenade', 'Throw'],
-            HIT:           ['hit', 'Hit', 'Take Damage'],
-            DEATH:         ['death', 'Standing Death Backward 01', 'Death'],
-            DEATH_PRONE:   ['death_prone', 'Prone Death', 'Death Prone'],
-            SWIM:          ['swim', 'Swimming', 'Swim'],
-            SKYDIVE:       ['jump_backward', 'fall', 'Skydive'],
-            PARACHUTE:     ['swim_idle', 'treading water', 'Parachute'],
+            IDLE:          ['idle', 'rifle aiming idle', 'standing idle', 'armature|mixamo.com|layer0'],
+            WALK:          ['walk', 'walking', 'rifle walk'],
+            WALK_BACK:     ['walk_backwards', 'walking backwards', 'backwards rifle walk'],
+            WALK_LEFT:     ['strafe_left', 'strafe left', 'left strafe'],
+            WALK_RIGHT:    ['strafe_right', 'strafe right', 'right strafe'],
+            RUN:           ['run', 'running', 'rifle run'],
+            SPRINT:        ['sprint', 'running (1)', 'run'],
+            JUMP:          ['jump_forward', 'jump', 'running jump', 'jumping'],
+            JUMP_BACK:     ['jump_backward', 'jump'],
+            FALL:          ['jump_backward', 'fall', 'falling', 'jump'],
+            LAND:          ['idle', 'land', 'landing'],
+            CROUCH_IDLE:   ['crouch_walk', 'crouch idle'],
+            CROUCH_WALK:   ['crouch_walk', 'crouch walk'],
+            PRONE_IDLE:    ['prone_forward', 'prone idle'],
+            PRONE_MOVE:    ['prone_forward', 'prone move'],
+            PRONE_FIRE:    ['prone_fire', 'fire'],
+            SLIDE:         ['slide', 'sprint to backslide'],
+            SLIDE_LOOP:    ['slide'],
+            WALL_CLIMB:    ['wall_climb', 'climb'],
+            AIM_IDLE:      ['idle', 'rifle aiming idle', 'aim idle'],
+            FIRE:          ['fire', 'firing rifle'],
+            RELOAD:        ['throw_grenade', 'reload', 'fire'],
+            GRENADE_THROW: ['throw_grenade', 'throw grenade'],
+            HIT:           ['jump_backward', 'hit'],
+            DEATH:         ['death', 'standing death backward 01'],
+            DEATH_PRONE:   ['death_prone', 'prone death', 'death'],
+            SWIM:          ['swim', 'swimming'],
+            SWIM_IDLE:     ['swim_idle', 'treading water', 'swim'],
+            SKYDIVE:       ['jump_backward', 'fall', 'swim'],
+            PARACHUTE:     ['swim_idle', 'idle'],
         };
 
         this.clips = {};
@@ -86,11 +90,10 @@ class AnimationSystem {
         this.registeredCharacters = new Set();
     }
 
-    // ── LOAD ANIMATIONS FROM GLB & REMOVE ROOT MOTION DRIFT ───────────────────
+    // ── LOAD & SANITIZE ALL CLIPS FROM anims_combat_pack.glb ───────────────────
     loadAnimationsFromGLB(gltfAnimations) {
         if (!gltfAnimations || gltfAnimations.length === 0) return;
 
-        // Build lookup map: normalized name → clip
         const clipByName = {};
         for (const clip of gltfAnimations) {
             const normalName = clip.name.toLowerCase().trim();
@@ -98,7 +101,7 @@ class AnimationSystem {
             clipByName[clip.name] = clip;
         }
 
-        // Map each state to best matching clip (clone to sanitize tracks independently)
+        // Map each state to its exact clip
         for (const [state, candidates] of Object.entries(this.animNameMap)) {
             for (const candidateName of candidates) {
                 const lower = candidateName.toLowerCase().trim();
@@ -111,23 +114,30 @@ class AnimationSystem {
             }
         }
 
-        // Fallbacks: ensure critical states always have a valid clip
+        // Safety fallbacks so zero states are ever missing
         const fallbacks = {
-            WALK:        this.clips.RUN,
-            RUN:         this.clips.WALK,
-            SPRINT:      this.clips.RUN || this.clips.WALK,
-            CROUCH_IDLE: this.clips.IDLE,
-            CROUCH_WALK: this.clips.WALK,
-            PRONE_IDLE:  this.clips.CROUCH_IDLE || this.clips.IDLE,
-            PRONE_MOVE:  this.clips.CROUCH_WALK || this.clips.WALK,
-            SLIDE:       this.clips.SPRINT || this.clips.RUN,
-            SLIDE_LOOP:  this.clips.SLIDE,
-            AIM_IDLE:    this.clips.IDLE,
-            FALL:        this.clips.JUMP,
-            LAND:        this.clips.WALK,
-            SWIM:        this.clips.IDLE,
-            SKYDIVE:     this.clips.FALL || this.clips.JUMP,
-            PARACHUTE:   this.clips.IDLE,
+            WALK:          this.clips.RUN || this.clips.IDLE,
+            RUN:           this.clips.WALK || this.clips.IDLE,
+            SPRINT:        this.clips.RUN || this.clips.WALK,
+            WALK_BACK:     this.clips.WALK,
+            WALK_LEFT:     this.clips.WALK,
+            WALK_RIGHT:    this.clips.WALK,
+            CROUCH_IDLE:   this.clips.CROUCH_WALK || this.clips.IDLE,
+            CROUCH_WALK:   this.clips.WALK,
+            PRONE_IDLE:    this.clips.PRONE_MOVE || this.clips.CROUCH_IDLE,
+            PRONE_MOVE:    this.clips.CROUCH_WALK || this.clips.WALK,
+            PRONE_FIRE:    this.clips.FIRE || this.clips.PRONE_IDLE,
+            SLIDE:         this.clips.SPRINT || this.clips.RUN,
+            SLIDE_LOOP:    this.clips.SLIDE,
+            AIM_IDLE:      this.clips.IDLE,
+            FIRE:          this.clips.IDLE,
+            FALL:          this.clips.JUMP,
+            LAND:          this.clips.IDLE,
+            SWIM:          this.clips.IDLE,
+            SWIM_IDLE:     this.clips.SWIM || this.clips.IDLE,
+            SKYDIVE:       this.clips.FALL || this.clips.JUMP,
+            PARACHUTE:     this.clips.SWIM_IDLE || this.clips.IDLE,
+            DEATH_PRONE:   this.clips.DEATH,
         };
 
         for (const [state, clip] of Object.entries(fallbacks)) {
@@ -137,39 +147,43 @@ class AnimationSystem {
             }
         }
 
-        // ── CRITICAL: Neutralize Progressive Root Motion Drift on Locomotion Clips! ──
-        // This stops the character from leaving the collider and snapping back on loop!
-        const inPlaceStates = ['WALK', 'WALK_BACK', 'WALK_LEFT', 'WALK_RIGHT', 'RUN', 'SPRINT', 'CROUCH_WALK', 'PRONE_MOVE'];
-        for (const state of inPlaceStates) {
+        // Neutralize progressive horizontal root-motion drift so characters stay locked to their physics collider!
+        const stripDriftStates = [
+            'IDLE', 'WALK', 'WALK_BACK', 'WALK_LEFT', 'WALK_RIGHT', 'RUN', 'SPRINT',
+            'CROUCH_IDLE', 'CROUCH_WALK', 'PRONE_IDLE', 'PRONE_MOVE', 'PRONE_FIRE',
+            'SLIDE', 'SLIDE_LOOP', 'JUMP', 'JUMP_BACK', 'FALL', 'SWIM', 'SWIM_IDLE',
+            'WALL_CLIMB', 'FIRE', 'AIM_IDLE'
+        ];
+
+        for (const state of stripDriftStates) {
             const clip = this.clips[state];
             if (!clip || !clip.tracks) continue;
 
             for (const track of clip.tracks) {
-                if (track.name.toLowerCase().includes('hips') && track.name.endsWith('.position')) {
+                const lowerName = track.name.toLowerCase();
+                if (lowerName.includes('hips') && lowerName.endsWith('.position')) {
                     const count = track.values.length / 3;
                     if (count > 1) {
                         const firstX = track.values[0];
-                        const lastX = track.values[(count - 1) * 3];
-                        const firstY = track.values[1];
-                        const lastY = track.values[(count - 1) * 3 + 1];
                         const firstZ = track.values[2];
+                        const lastX = track.values[(count - 1) * 3];
                         const lastZ = track.values[(count - 1) * 3 + 2];
 
                         const deltaX = lastX - firstX;
-                        const deltaY = lastY - firstY;
                         const deltaZ = lastZ - firstZ;
 
                         for (let i = 0; i < count; i++) {
                             const progress = i / (count - 1);
-                            // Subtract progressive forward/lateral drift so start and end align perfectly
-                            if (Math.abs(deltaY) > 0.4) {
-                                track.values[i * 3 + 1] -= (deltaY * progress);
+                            // Lock XZ root translation smoothly to origin (keeps natural Y hip bounce intact!)
+                            if (Math.abs(deltaX) > 0.08) {
+                                track.values[i * 3] -= deltaX * progress;
+                            } else {
+                                track.values[i * 3] = firstX + (track.values[i * 3] - firstX) * 0.25;
                             }
-                            if (Math.abs(deltaZ) > 0.4) {
-                                track.values[i * 3 + 2] -= (deltaZ * progress);
-                            }
-                            if (Math.abs(deltaX) > 0.25) {
-                                track.values[i * 3] -= (deltaX * progress);
+                            if (Math.abs(deltaZ) > 0.08) {
+                                track.values[i * 3 + 2] -= deltaZ * progress;
+                            } else {
+                                track.values[i * 3 + 2] = firstZ + (track.values[i * 3 + 2] - firstZ) * 0.25;
                             }
                         }
                     }
@@ -177,18 +191,54 @@ class AnimationSystem {
             }
         }
 
+        this.retargetCache.clear();
         this.isReady = Object.keys(this.clips).length > 0;
-        console.log(`[AnimSystem] Ready: ${Object.keys(this.clips).length} in-place clips loaded.`);
+        console.log(`[AnimSystem] Ready: ${Object.keys(this.clips).length} sanitized in-place states bound.`);
 
-        // Re-bind to existing live characters
         for (const charMesh of this.registeredCharacters) {
             this.rebindCharacter(charMesh);
         }
     }
 
-    // ── ATTACH TO A CHARACTER ──────────────────────────────────────────────────
-    attachToCharacter(characterMesh, animationClips) {
+    // Detects the skeleton's bone naming prefix so clips retarget automatically to any Mixamo/generic rig
+    _detectBonePrefix(characterMesh) {
+        let prefix = 'mixamorig:';
+        characterMesh.traverse((n) => {
+            if (n.isBone) {
+                if (n.name === 'mixamorig:Hips') prefix = 'mixamorig:';
+                else if (n.name === 'mixamorigHips') prefix = 'mixamorig';
+                else if (n.name === 'Hips') prefix = '';
+            }
+        });
+        return prefix;
+    }
+
+    _getRetargetedClipsForPrefix(prefix) {
+        if (prefix === 'mixamorig:') return this.clips;
+        if (this.retargetCache.has(prefix)) return this.retargetCache.get(prefix);
+
+        const mapped = {};
+        for (const [state, clip] of Object.entries(this.clips)) {
+            const cloned = clip.clone();
+            cloned.tracks = cloned.tracks.map(t => {
+                const nt = t.clone();
+                if (nt.name.startsWith('mixamorig:')) {
+                    nt.name = prefix + nt.name.slice('mixamorig:'.length);
+                }
+                return nt;
+            });
+            mapped[state] = cloned;
+        }
+        this.retargetCache.set(prefix, mapped);
+        return mapped;
+    }
+
+    // ── ATTACH TO A SKINNED CHARACTER ──────────────────────────────────────────
+    attachToCharacter(characterMesh) {
         if (!characterMesh) return null;
+        if (characterMesh.userData && characterMesh.userData.hasSkinnedMesh === false) {
+            return null; // Static character mesh: uses smooth procedural locomotion instead of AnimationMixer
+        }
 
         let mixer = this.mixers.get(characterMesh);
         if (!mixer) {
@@ -199,41 +249,46 @@ class AnimationSystem {
             this.registeredCharacters.add(characterMesh);
         }
 
-        this.rebindCharacter(characterMesh, animationClips);
+        this.rebindCharacter(characterMesh);
         return mixer;
     }
 
-    rebindCharacter(characterMesh, extraClips = null) {
+    detachCharacter(characterMesh) {
         if (!characterMesh) return;
+        const mixer = this.mixers.get(characterMesh);
+        if (mixer) mixer.stopAllAction();
+        this.registeredCharacters.delete(characterMesh);
+    }
+
+    rebindCharacter(characterMesh) {
+        if (!characterMesh || !this.isReady) return;
         const mixer = this.mixers.get(characterMesh);
         if (!mixer) return;
 
-        const actionMap = this.actions.get(characterMesh) || {};
+        const prefix = this._detectBonePrefix(characterMesh);
+        const clipSet = this._getRetargetedClipsForPrefix(prefix);
+        const actionMap = {};
         this.actions.set(characterMesh, actionMap);
 
-        const allClips = extraClips || Object.values(this.clips);
-        for (const clip of allClips) {
-            if (clip && clip.name && !actionMap[clip.name]) {
-                try {
-                    const action = mixer.clipAction(clip);
-                    action.setEffectiveWeight(0);
-                    actionMap[clip.name] = action;
-                } catch(e) {
-                    // skip incompatible clip
-                }
+        for (const [stateName, clip] of Object.entries(clipSet)) {
+            if (!clip) continue;
+            try {
+                const action = mixer.clipAction(clip);
+                action.setEffectiveWeight(0);
+                actionMap[stateName] = action;
+            } catch (e) {
+                // Ignore unsupported track bindings gracefully
             }
         }
 
-        // If no state playing yet, start IDLE
-        if (!this.currentStates.get(characterMesh) && this.clips['IDLE']) {
-            this.transitionTo(characterMesh, 'IDLE', { blendIn: 0.1 });
+        if (!this.currentStates.get(characterMesh) && actionMap['IDLE']) {
+            this.transitionTo(characterMesh, 'IDLE', { blendIn: 0.1, force: true });
         }
     }
 
-    // ── TRANSITION TO STATE ────────────────────────────────────────────────────
+    // ── TRANSITION WITH SMOOTH CROSS-FADE ──────────────────────────────────────
     transitionTo(characterMesh, newState, options = {}) {
         if (!characterMesh) return;
-
         const mixer = this.mixers.get(characterMesh);
         if (!mixer) return;
 
@@ -241,38 +296,21 @@ class AnimationSystem {
         if (currentState === newState && !options.force) return;
 
         const actionMap = this.actions.get(characterMesh);
-        if (!actionMap) return;
+        if (!actionMap || !actionMap[newState]) return;
 
-        const clip = this.clips[newState];
-        if (!clip) return;
+        const stateDef = this.states[newState] || { loop: true, blendIn: 0.18, timeScale: 1.0 };
+        const blendDuration = options.blendIn ?? stateDef.blendIn ?? 0.16;
+        const newAction = actionMap[newState];
 
-        const stateDef = this.states[newState] || { loop: true, blendIn: 0.2, timeScale: 1.0 };
-        const blendDuration = options.blendIn ?? stateDef.blendIn ?? 0.18;
-
-        // Find or create new action
-        let newAction = actionMap[clip.name];
-        if (!newAction) {
-            try {
-                newAction = mixer.clipAction(clip);
-                actionMap[clip.name] = newAction;
-            } catch(e) { return; }
+        if (currentState && actionMap[currentState] && actionMap[currentState] !== newAction) {
+            actionMap[currentState].fadeOut(blendDuration);
         }
 
-        // Fade out current action
-        if (currentState && this.clips[currentState]) {
-            const oldClip = this.clips[currentState];
-            const oldAction = actionMap[oldClip.name];
-            if (oldAction && oldAction !== newAction) {
-                oldAction.fadeOut(blendDuration);
-            }
-        }
-
-        // Configure loop & time scale
+        newAction.enabled = true;
         newAction.loop = stateDef.loop ? THREE.LoopRepeat : THREE.LoopOnce;
         newAction.clampWhenFinished = !stateDef.loop;
-        newAction.timeScale = stateDef.timeScale || 1.0;
+        newAction.timeScale = options.timeScale ?? stateDef.timeScale ?? 1.0;
 
-        // Fade in new action
         newAction.reset();
         newAction.setEffectiveWeight(1);
         newAction.fadeIn(blendDuration);
@@ -291,28 +329,46 @@ class AnimationSystem {
         }
     }
 
-    // ── EVALUATE STATE FROM PLAYER PHYSICS & COMBAT ────────────────────────────
-    evaluateState(player, isFiring, isAiming) {
-        if (!player.isAlive) return 'DEATH';
-        if (player.inPlane) return 'IDLE';
+    // ── EVALUATE FULL MOVEMENT + COMBAT STATE MACHINE ──────────────────────────
+    evaluateState(entity, isFiring, isAiming) {
+        if (!entity.isAlive) {
+            return (entity.posture === 'PRONE') ? 'DEATH_PRONE' : 'DEATH';
+        }
+        if (entity.inPlane) return 'IDLE';
 
-        if (player.isSkydiving && !player.isParachuteOpen) return 'SKYDIVE';
-        if (player.isParachuteOpen) return 'PARACHUTE';
+        if (entity.isSkydiving && !entity.isParachuteOpen) return 'SKYDIVE';
+        if (entity.isParachuteOpen) return 'PARACHUTE';
 
-        if (player.isSwimming) return 'SWIM';
+        const hSpeed = Math.hypot(entity.velocity ? entity.velocity.x : 0, entity.velocity ? entity.velocity.z : 0);
+        const isMoving = hSpeed > 0.4;
 
-        const hSpeed = Math.hypot(player.velocity.x, player.velocity.z);
-        const isMoving = hSpeed > 0.45;
+        if (entity.isSwimming) {
+            return isMoving ? 'SWIM' : 'SWIM_IDLE';
+        }
 
-        if (!player.isGrounded && player.velocity.y < -1.8) return 'FALL';
-        if (!player.isGrounded && player.velocity.y > 1.8) return 'JUMP';
+        // Respect short one-shot action locks (GRENADE_THROW, RELOAD, LAND, HIT)
+        const lock = this.actionLocks.get(entity.blenderModel);
+        if (lock && performance.now() < lock.until) {
+            // Allow high-priority movement like SLIDE or JUMP to cancel RELOAD/LAND
+            if (!entity.isSliding && entity.isGrounded) {
+                return lock.state;
+            }
+        }
 
-        if (player.isSliding) return 'SLIDE';
+        if (entity.isSliding) return 'SLIDE';
 
-        if (player.posture === 'PRONE') {
+        if (entity.isGrounded === false) {
+            if (entity.velocity && entity.velocity.y < -2.2) return 'FALL';
+            if (entity.velocity && entity.velocity.y > 1.2) return 'JUMP';
+        }
+
+        if (entity.posture === 'PRONE') {
+            if (isFiring) return 'PRONE_FIRE';
             return isMoving ? 'PRONE_MOVE' : 'PRONE_IDLE';
         }
-        if (player.posture === 'CROUCH') {
+
+        if (entity.posture === 'CROUCH') {
+            if (isFiring && !isMoving) return 'FIRE';
             return isMoving ? 'CROUCH_WALK' : 'CROUCH_IDLE';
         }
 
@@ -321,38 +377,68 @@ class AnimationSystem {
             return isAiming ? 'AIM_IDLE' : 'IDLE';
         }
 
-        // Sprinting priority
-        if (player.isSprinting && hSpeed > 6.0) return 'SPRINT';
+        // Firing while slow-walking plays FIRE cleanly; while sprinting prioritizes SPRINT
+        if (isFiring && hSpeed < 4.5) {
+            return 'FIRE';
+        }
 
-        // Directional checks when aiming
-        if (isAiming) {
-            const hVel = new THREE.Vector2(player.velocity.x, player.velocity.z).normalize();
-            const fwd = new THREE.Vector2(-Math.sin(player.rotationY), -Math.cos(player.rotationY)).normalize();
-            const right = new THREE.Vector2(Math.cos(player.rotationY), -Math.sin(player.rotationY)).normalize();
-            const dotFwd = hVel.dot(fwd);
-            const dotRight = hVel.dot(right);
+        if (entity.isSprinting && hSpeed > 7.8) {
+            return 'SPRINT';
+        }
+
+        // 8-way strafe & backpedal detection when aiming or in combat
+        if (isAiming || isFiring) {
+            const invLen = 1 / Math.max(0.001, hSpeed);
+            const vx = entity.velocity.x * invLen;
+            const vz = entity.velocity.z * invLen;
+            const yaw = entity.rotationY || 0;
+            const fwdX = -Math.sin(yaw);
+            const fwdZ = -Math.cos(yaw);
+            const rightX = Math.cos(yaw);
+            const rightZ = -Math.sin(yaw);
+
+            const dotFwd = vx * fwdX + vz * fwdZ;
+            const dotRight = vx * rightX + vz * rightZ;
 
             if (dotFwd < -0.45) return 'WALK_BACK';
             if (dotRight > 0.55) return 'WALK_RIGHT';
             if (dotRight < -0.55) return 'WALK_LEFT';
+            return (hSpeed > 5.5) ? 'RUN' : 'WALK';
         }
 
-        if (hSpeed > 6.5) return 'RUN';
+        if (hSpeed > 5.4) return 'RUN';
         return 'WALK';
     }
 
-    // ── MAIN TICK UPDATE ───────────────────────────────────────────────────────
-    update(dt, characterMesh, player, isFiring, isAiming) {
+    // ── FRAME TICK WITH SPEED-SYNCED PLAYBACK (ELIMINATES FOOT SLIDING) ────────
+    update(dt, characterMesh, entity, isFiring, isAiming) {
+        if (!characterMesh || !this.isReady) return;
         const mixer = this.mixers.get(characterMesh);
-        if (mixer) {
-            mixer.update(dt);
+        if (!mixer) return;
+
+        const targetState = this.evaluateState(entity, isFiring, isAiming);
+        this.transitionTo(characterMesh, targetState);
+
+        // Dynamically sync locomotion clip playback speed with true ground speed
+        const stateDef = this.states[targetState];
+        const actionMap = this.actions.get(characterMesh);
+        if (stateDef && stateDef.refSpeed && actionMap && actionMap[targetState]) {
+            const hSpeed = Math.hypot(entity.velocity ? entity.velocity.x : 0, entity.velocity ? entity.velocity.z : 0);
+            const synced = THREE.MathUtils.clamp((hSpeed / stateDef.refSpeed) * stateDef.timeScale, 0.55, 1.55);
+            actionMap[targetState].timeScale = synced;
         }
 
-        const targetState = this.evaluateState(player, isFiring, isAiming);
-        this.transitionTo(characterMesh, targetState);
+        mixer.update(dt);
     }
 
-    triggerAction(characterMesh, state, onComplete) {
+    triggerAction(characterMesh, state, onComplete, lockDurationMs = 450) {
+        if (!characterMesh || !this.isReady) return;
+        if (lockDurationMs > 0) {
+            this.actionLocks.set(characterMesh, {
+                state: state,
+                until: performance.now() + lockDurationMs
+            });
+        }
         this.transitionTo(characterMesh, state, { onComplete, force: true });
     }
 

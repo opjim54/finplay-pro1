@@ -10,6 +10,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -26,7 +27,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -38,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -87,6 +91,8 @@ import kotlin.random.Random
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun LudoBoardScreen(
+    initialVsBot: Boolean = true,
+    initialBotAccuracy: Int = 75,
     onRecordMatch: (outcome: GameMatchResult, score: Int, vsBot: Boolean, botAccuracy: Int) -> Unit = { _, _, _, _ -> }
 ) {
     val gStrings by LanguageManager.gameStrings.collectAsStateWithLifecycle()
@@ -94,11 +100,13 @@ fun LudoBoardScreen(
     val scope = rememberCoroutineScope()
 
     var playerCount by remember { mutableIntStateOf(2) }
-    var playVsBot by remember { mutableStateOf(true) }
-    var botAccuracy by remember { mutableIntStateOf(75) }
+    var playVsBot by remember { mutableStateOf(initialVsBot) }
+    var botAccuracy by remember { mutableIntStateOf(initialBotAccuracy) }
     var showRules by remember { mutableStateOf(false) }
     var isRollingAnim by remember { mutableStateOf(false) }
     var displayDice by remember { mutableIntStateOf(1) }
+    var rollTilt by remember { mutableFloatStateOf(0f) }
+    var matchSessionId by remember { mutableIntStateOf(0) }
     var resultRecorded by remember { mutableStateOf(false) }
     var lastEarnedScore by remember { mutableIntStateOf(0) }
     val perPlayerDice = remember { mutableStateMapOf<LudoColor, Int>() }
@@ -106,6 +114,10 @@ fun LudoBoardScreen(
     var state by remember { mutableStateOf(LudoEngine.newGame(playerCount, playVsBot)) }
 
     fun resetLudo(cnt: Int = playerCount, vsBot: Boolean = playVsBot) {
+        matchSessionId++
+        isRollingAnim = false
+        rollTilt = 0f
+        displayDice = 1
         resultRecorded = false
         lastEarnedScore = 0
         perPlayerDice.clear()
@@ -138,18 +150,23 @@ fun LudoBoardScreen(
 
     suspend fun performAnimatedRoll(currentState: LudoGameState) {
         if (isRollingAnim || currentState.phase != LudoPhase.WAIT_ROLL) return
+        val session = matchSessionId
         isRollingAnim = true
         val rollingColor = currentState.currentTurn
         for (i in 0..6) {
+            if (session != matchSessionId) return
             val rand = Random.nextInt(1, 7)
             displayDice = rand
             perPlayerDice[rollingColor] = rand
+            rollTilt = if (i % 2 == 0) 14f else -14f
             if (i % 2 == 0) GameSoundEngine.play(GameSoundEffect.DICE_TICK)
             delay(48L + i * 10L)
         }
+        if (session != matchSessionId) return
         val finalDice = Random.nextInt(1, 7)
         displayDice = finalDice
         perPlayerDice[rollingColor] = finalDice
+        rollTilt = 0f
         val next = LudoEngine.applyRoll(currentState, finalDice)
         state = next
         if (finalDice == 6) GameSoundEngine.play(GameSoundEffect.SPECIAL)
@@ -174,16 +191,20 @@ fun LudoBoardScreen(
 
     // Automatic Bot Turn driver
     val isBotTurn = state.phase != LudoPhase.GAME_OVER && state.currentTurn in state.botColors
-    LaunchedEffect(state.turnIndex, state.phase, state.diceValue, state.botColors, botAccuracy) {
+    LaunchedEffect(state.turnIndex, state.phase, state.diceValue, state.botColors, botAccuracy, matchSessionId) {
         if (!isBotTurn) return@LaunchedEffect
+        val session = matchSessionId
         delay(360L)
+        if (session != matchSessionId) return@LaunchedEffect
         if (state.phase == LudoPhase.WAIT_ROLL) {
             performAnimatedRoll(state)
         } else if (state.phase == LudoPhase.WAIT_MOVE) {
+            val snapshot = state
             val chosenIdx = withContext(Dispatchers.Default) {
-                LudoBotAi.chooseToken(state, botAccuracy)
+                LudoBotAi.chooseToken(snapshot, botAccuracy)
             }
             delay(240L)
+            if (session != matchSessionId) return@LaunchedEffect
             executeLudoMove(state, chosenIdx)
         }
     }
@@ -316,21 +337,22 @@ fun LudoBoardScreen(
             }
         }
 
-        // Top Corners (Green = Top-Left, Yellow = Top-Right)
+        // Top Corners aligned with Board Yards (RED = Top-Left, GREEN = Top-Right)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (LudoColor.GREEN in state.activeColors) {
+            if (LudoColor.RED in state.activeColors) {
                 LudoPlayerCornerControl(
-                    playerColor = LudoColor.GREEN,
-                    isCurrentTurn = state.currentTurn == LudoColor.GREEN,
-                    isBot = LudoColor.GREEN in state.botColors,
-                    crownedCount = state.tokens[LudoColor.GREEN].orEmpty().count { it.progress == state.finishProgress },
-                    diceValue = if (state.currentTurn == LudoColor.GREEN) displayDice else (perPlayerDice[LudoColor.GREEN] ?: 1),
-                    isRolling = isRollingAnim && state.currentTurn == LudoColor.GREEN,
-                    canClickToRoll = state.currentTurn == LudoColor.GREEN && !isBotTurn && state.phase == LudoPhase.WAIT_ROLL && !isRollingAnim,
+                    playerColor = LudoColor.RED,
+                    isCurrentTurn = state.currentTurn == LudoColor.RED,
+                    isBot = LudoColor.RED in state.botColors,
+                    crownedCount = state.tokens[LudoColor.RED].orEmpty().count { it.progress == state.finishProgress },
+                    diceValue = if (state.currentTurn == LudoColor.RED) displayDice else (perPlayerDice[LudoColor.RED] ?: 1),
+                    isRolling = isRollingAnim && state.currentTurn == LudoColor.RED,
+                    rollTilt = rollTilt,
+                    canClickToRoll = state.currentTurn == LudoColor.RED && !isBotTurn && state.phase == LudoPhase.WAIT_ROLL && !isRollingAnim,
                     onRollClick = { scope.launch { performAnimatedRoll(state) } },
                     gStrings = gStrings,
                     alignRight = false,
@@ -342,15 +364,16 @@ fun LudoBoardScreen(
 
             Spacer(Modifier.width(8.dp))
 
-            if (LudoColor.YELLOW in state.activeColors) {
+            if (LudoColor.GREEN in state.activeColors) {
                 LudoPlayerCornerControl(
-                    playerColor = LudoColor.YELLOW,
-                    isCurrentTurn = state.currentTurn == LudoColor.YELLOW,
-                    isBot = LudoColor.YELLOW in state.botColors,
-                    crownedCount = state.tokens[LudoColor.YELLOW].orEmpty().count { it.progress == state.finishProgress },
-                    diceValue = if (state.currentTurn == LudoColor.YELLOW) displayDice else (perPlayerDice[LudoColor.YELLOW] ?: 1),
-                    isRolling = isRollingAnim && state.currentTurn == LudoColor.YELLOW,
-                    canClickToRoll = state.currentTurn == LudoColor.YELLOW && !isBotTurn && state.phase == LudoPhase.WAIT_ROLL && !isRollingAnim,
+                    playerColor = LudoColor.GREEN,
+                    isCurrentTurn = state.currentTurn == LudoColor.GREEN,
+                    isBot = LudoColor.GREEN in state.botColors,
+                    crownedCount = state.tokens[LudoColor.GREEN].orEmpty().count { it.progress == state.finishProgress },
+                    diceValue = if (state.currentTurn == LudoColor.GREEN) displayDice else (perPlayerDice[LudoColor.GREEN] ?: 1),
+                    isRolling = isRollingAnim && state.currentTurn == LudoColor.GREEN,
+                    rollTilt = rollTilt,
+                    canClickToRoll = state.currentTurn == LudoColor.GREEN && !isBotTurn && state.phase == LudoPhase.WAIT_ROLL && !isRollingAnim,
                     onRollClick = { scope.launch { performAnimatedRoll(state) } },
                     gStrings = gStrings,
                     alignRight = true,
@@ -409,21 +432,22 @@ fun LudoBoardScreen(
             }
         }
 
-        // Bottom Corners (Red = Bottom-Left, Blue = Bottom-Right)
+        // Bottom Corners aligned with Board Yards (BLUE = Bottom-Left, YELLOW = Bottom-Right)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (LudoColor.RED in state.activeColors) {
+            if (LudoColor.BLUE in state.activeColors) {
                 LudoPlayerCornerControl(
-                    playerColor = LudoColor.RED,
-                    isCurrentTurn = state.currentTurn == LudoColor.RED,
-                    isBot = LudoColor.RED in state.botColors,
-                    crownedCount = state.tokens[LudoColor.RED].orEmpty().count { it.progress == state.finishProgress },
-                    diceValue = if (state.currentTurn == LudoColor.RED) displayDice else (perPlayerDice[LudoColor.RED] ?: 1),
-                    isRolling = isRollingAnim && state.currentTurn == LudoColor.RED,
-                    canClickToRoll = state.currentTurn == LudoColor.RED && !isBotTurn && state.phase == LudoPhase.WAIT_ROLL && !isRollingAnim,
+                    playerColor = LudoColor.BLUE,
+                    isCurrentTurn = state.currentTurn == LudoColor.BLUE,
+                    isBot = LudoColor.BLUE in state.botColors,
+                    crownedCount = state.tokens[LudoColor.BLUE].orEmpty().count { it.progress == state.finishProgress },
+                    diceValue = if (state.currentTurn == LudoColor.BLUE) displayDice else (perPlayerDice[LudoColor.BLUE] ?: 1),
+                    isRolling = isRollingAnim && state.currentTurn == LudoColor.BLUE,
+                    rollTilt = rollTilt,
+                    canClickToRoll = state.currentTurn == LudoColor.BLUE && !isBotTurn && state.phase == LudoPhase.WAIT_ROLL && !isRollingAnim,
                     onRollClick = { scope.launch { performAnimatedRoll(state) } },
                     gStrings = gStrings,
                     alignRight = false,
@@ -435,15 +459,16 @@ fun LudoBoardScreen(
 
             Spacer(Modifier.width(8.dp))
 
-            if (LudoColor.BLUE in state.activeColors) {
+            if (LudoColor.YELLOW in state.activeColors) {
                 LudoPlayerCornerControl(
-                    playerColor = LudoColor.BLUE,
-                    isCurrentTurn = state.currentTurn == LudoColor.BLUE,
-                    isBot = LudoColor.BLUE in state.botColors,
-                    crownedCount = state.tokens[LudoColor.BLUE].orEmpty().count { it.progress == state.finishProgress },
-                    diceValue = if (state.currentTurn == LudoColor.BLUE) displayDice else (perPlayerDice[LudoColor.BLUE] ?: 1),
-                    isRolling = isRollingAnim && state.currentTurn == LudoColor.BLUE,
-                    canClickToRoll = state.currentTurn == LudoColor.BLUE && !isBotTurn && state.phase == LudoPhase.WAIT_ROLL && !isRollingAnim,
+                    playerColor = LudoColor.YELLOW,
+                    isCurrentTurn = state.currentTurn == LudoColor.YELLOW,
+                    isBot = LudoColor.YELLOW in state.botColors,
+                    crownedCount = state.tokens[LudoColor.YELLOW].orEmpty().count { it.progress == state.finishProgress },
+                    diceValue = if (state.currentTurn == LudoColor.YELLOW) displayDice else (perPlayerDice[LudoColor.YELLOW] ?: 1),
+                    isRolling = isRollingAnim && state.currentTurn == LudoColor.YELLOW,
+                    rollTilt = rollTilt,
+                    canClickToRoll = state.currentTurn == LudoColor.YELLOW && !isBotTurn && state.phase == LudoPhase.WAIT_ROLL && !isRollingAnim,
                     onRollClick = { scope.launch { performAnimatedRoll(state) } },
                     gStrings = gStrings,
                     alignRight = true,
@@ -451,6 +476,28 @@ fun LudoBoardScreen(
                 )
             } else {
                 Spacer(Modifier.width(1.dp))
+            }
+        }
+
+        // 5th Player Control (PURPLE) for 5-Player Star Board
+        if (LudoColor.PURPLE in state.activeColors) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                LudoPlayerCornerControl(
+                    playerColor = LudoColor.PURPLE,
+                    isCurrentTurn = state.currentTurn == LudoColor.PURPLE,
+                    isBot = LudoColor.PURPLE in state.botColors,
+                    crownedCount = state.tokens[LudoColor.PURPLE].orEmpty().count { it.progress == state.finishProgress },
+                    diceValue = if (state.currentTurn == LudoColor.PURPLE) displayDice else (perPlayerDice[LudoColor.PURPLE] ?: 1),
+                    isRolling = isRollingAnim && state.currentTurn == LudoColor.PURPLE,
+                    rollTilt = rollTilt,
+                    canClickToRoll = state.currentTurn == LudoColor.PURPLE && !isBotTurn && state.phase == LudoPhase.WAIT_ROLL && !isRollingAnim,
+                    onRollClick = { scope.launch { performAnimatedRoll(state) } },
+                    gStrings = gStrings,
+                    alignRight = false
+                )
             }
         }
 
@@ -828,6 +875,7 @@ private fun LudoPlayerCornerControl(
     crownedCount: Int,
     diceValue: Int,
     isRolling: Boolean,
+    rollTilt: Float,
     canClickToRoll: Boolean,
     onRollClick: () -> Unit,
     gStrings: GameUiStrings,
@@ -863,6 +911,7 @@ private fun LudoPlayerCornerControl(
                     color = color,
                     diceValue = diceValue,
                     isRolling = isRolling,
+                    rollTilt = rollTilt,
                     canClickToRoll = canClickToRoll,
                     pulseScale = cornerPulseScale,
                     onRollClick = onRollClick,
@@ -893,6 +942,7 @@ private fun LudoPlayerCornerControl(
                     color = color,
                     diceValue = diceValue,
                     isRolling = isRolling,
+                    rollTilt = rollTilt,
                     canClickToRoll = canClickToRoll,
                     pulseScale = cornerPulseScale,
                     onRollClick = onRollClick,
@@ -908,6 +958,7 @@ private fun CornerDiceBox(
     color: Color,
     diceValue: Int,
     isRolling: Boolean,
+    rollTilt: Float,
     canClickToRoll: Boolean,
     pulseScale: Float,
     onRollClick: () -> Unit,
@@ -923,7 +974,7 @@ private fun CornerDiceBox(
             .graphicsLayer {
                 scaleX = if (canClickToRoll) pulseScale else 1f
                 scaleY = if (canClickToRoll) pulseScale else 1f
-                rotationZ = if (isRolling) Random.nextFloat() * 30f - 15f else 0f
+                rotationZ = if (isRolling) rollTilt else 0f
             }
             .clip(RoundedCornerShape(12.dp))
             .clickable(enabled = canClickToRoll, onClick = onRollClick)

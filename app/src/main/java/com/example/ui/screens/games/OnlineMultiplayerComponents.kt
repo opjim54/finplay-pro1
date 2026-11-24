@@ -11,8 +11,11 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,11 +47,13 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -61,9 +66,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -71,20 +81,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.data.games.MultiplayerRoomDoc
 import com.example.data.games.TournamentSettlementReceipt
 import com.example.data.local.GameMatchResult
-import com.example.domain.games.AetherCrownEngine
-import com.example.domain.games.AetherPlayer
-import com.example.domain.games.AetherTurnPhase
 import com.example.domain.games.BoardSkinPalette
 import com.example.domain.games.ChessEngine
 import com.example.domain.games.ChessGameState
 import com.example.domain.games.ChessOutcome
-import com.example.domain.games.ConnectFourDisc
-import com.example.domain.games.ConnectFourEngine
-import com.example.domain.games.ConnectFourOutcome
-import com.example.domain.games.ConnectFourState
 import com.example.domain.games.GameSoundEffect
 import com.example.domain.games.GameSoundEngine
 import com.example.domain.games.LudoColor
@@ -92,12 +96,24 @@ import com.example.domain.games.LudoEngine
 import com.example.domain.games.LudoPhase
 import com.example.domain.games.OnlineMatchSerializer
 import com.example.domain.games.PieceColor
-import com.example.domain.games.ReversiDisc
-import com.example.domain.games.ReversiEngine
-import com.example.domain.games.ReversiOutcome
-import com.example.ui.theme.LocalFinanceColors
+import com.example.domain.games.SholoGutiEngine
+import com.example.domain.games.SholoGutiMove
+import com.example.domain.games.SholoGutiOutcome
+import com.example.domain.games.SholoGutiPlayer
+import com.example.domain.games.SnakesLaddersEngine
+import com.example.domain.games.SnakesPhase
 import com.example.ui.viewmodel.OnlineAuthProfile
+import kotlin.math.hypot
 import kotlin.random.Random
+
+private val OnlineObsidianCard = Color(0xFF141F35)
+private val OnlineObsidianElevated = Color(0xFF1B2945)
+private val OnlineEmeraldDeep = Color(0xFF042F2E)
+private val OnlineChampagneGold = Color(0xFFF5C451)
+private val OnlineMintGlow = Color(0xFF10B981)
+private val OnlineMintSoft = Color(0xFF6EE7B7)
+private val OnlineIvory = Color(0xFFF8FAFC)
+private val OnlineSlate = Color(0xFF94A3B8)
 
 @Composable
 fun OnlineMultiplayerLobbyCard(
@@ -115,14 +131,13 @@ fun OnlineMultiplayerLobbyCard(
     onReopenRoom: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val financeColors = LocalFinanceColors.current
-    var selectedGame by remember { mutableStateOf(ArenaGameId.CHESS) }
+    var selectedGame by remember { mutableStateOf(ArenaGameId.LUDO) }
     var joinCode by remember { mutableStateOf("") }
 
     Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, Color(0xFF0EA5E9).copy(alpha = 0.5f)),
+        shape = RoundedCornerShape(22.dp),
+        color = OnlineObsidianCard,
+        border = BorderStroke(1.2.dp, OnlineChampagneGold.copy(alpha = 0.45f)),
         modifier = modifier.fillMaxWidth()
     ) {
         Column(
@@ -135,16 +150,28 @@ fun OnlineMultiplayerLobbyCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Default.Public, contentDescription = null, tint = Color(0xFF0284C7))
-                    Text(
-                        text = gStrings.onlineFriendsTitle,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Icon(Icons.Default.Public, contentDescription = null, tint = OnlineChampagneGold)
+                    Column {
+                        Text(
+                            text = gStrings.onlineFriendsTitle,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = OnlineIvory
+                        )
+                        Text(
+                            text = if (gStrings.isBn) "৩x গেম কয়েন বোনাস • লাইভ ১v১ ও ফ্রেন্ড রুম" else "3x Game Coins Bonus • Live 1v1 & Friend Rooms",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = OnlineMintSoft
+                        )
+                    }
                 }
                 if (onlineAuth != null) {
                     TextButton(onClick = onSignOutOnline) {
-                        Text(if (gStrings.isBn) "সাইন আউট" else "Sign out", style = MaterialTheme.typography.labelSmall)
+                        Text(
+                            if (gStrings.isBn) "সাইন আউট" else "Sign out",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = OnlineChampagneGold
+                        )
                     }
                 }
             }
@@ -153,46 +180,83 @@ fun OnlineMultiplayerLobbyCard(
                 Text(
                     text = gStrings.onlineSignInPrompt,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = OnlineSlate
                 )
                 Button(
                     onClick = onSignInGoogle,
                     enabled = !isBusy,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = OnlineChampagneGold,
+                        contentColor = Color(0xFF090E1A)
+                    ),
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("online_google_signin_btn")
                 ) {
                     if (isBusy) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color(0xFF090E1A))
                     } else {
                         Icon(Icons.Default.AccountCircle, contentDescription = null, modifier = Modifier.size(18.dp))
                     }
                     Spacer(Modifier.width(6.dp))
-                    Text(gStrings.signInWithGoogleLabel, fontWeight = FontWeight.Bold)
+                    Text(gStrings.signInWithGoogleLabel, fontWeight = FontWeight.ExtraBold)
                 }
             } else {
+                // Signed-In Dual Player Card Preview with Real Google Photo
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+                    shape = RoundedCornerShape(14.dp),
+                    color = OnlineEmeraldDeep.copy(alpha = 0.72f),
+                    border = BorderStroke(1.dp, OnlineMintGlow.copy(alpha = 0.45f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text(avatarGlyph, fontSize = 18.sp)
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(onlineAuth.displayName, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                            Text(onlineAuth.email, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(OnlineObsidianCard)
+                                .border(1.5.dp, OnlineChampagneGold, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (!onlineAuth.photoUrl.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = onlineAuth.photoUrl,
+                                    contentDescription = onlineAuth.displayName,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Text(avatarGlyph, fontSize = 18.sp)
+                            }
                         }
-                        Surface(shape = RoundedCornerShape(50), color = Color(0xFF10B981).copy(alpha = 0.2f)) {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = if (gStrings.isBn) "অনলাইন" else "ONLINE",
-                                style = MaterialTheme.typography.labelSmall,
+                                onlineAuth.displayName,
+                                style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF059669),
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                color = OnlineIvory
+                            )
+                            Text(
+                                onlineAuth.email,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = OnlineSlate
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = OnlineMintGlow.copy(alpha = 0.2f),
+                            border = BorderStroke(1.dp, OnlineMintGlow.copy(alpha = 0.5f))
+                        ) {
+                            Text(
+                                text = if (gStrings.isBn) "● অনলাইন" else "● ONLINE",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = OnlineMintSoft,
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
                             )
                         }
                     }
@@ -206,10 +270,29 @@ fun OnlineMultiplayerLobbyCard(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     ArenaGameId.entries.forEach { game ->
+                        val selected = selectedGame == game
                         FilterChip(
-                            selected = selectedGame == game,
+                            selected = selected,
                             onClick = { selectedGame = game },
-                            label = { Text(gStrings.gameTitle(game), style = MaterialTheme.typography.labelSmall) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                containerColor = OnlineObsidianElevated,
+                                labelColor = OnlineSlate,
+                                selectedContainerColor = OnlineChampagneGold,
+                                selectedLabelColor = Color(0xFF090E1A)
+                            ),
+                            border = FilterChipDefaults.filterChipBorder(
+                                enabled = true,
+                                selected = selected,
+                                borderColor = OnlineChampagneGold.copy(alpha = 0.28f),
+                                selectedBorderColor = OnlineChampagneGold
+                            ),
+                            label = {
+                                Text(
+                                    gStrings.gameTitle(game),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.Medium
+                                )
+                            },
                             modifier = Modifier.testTag("online_game_chip_${game.name.lowercase()}")
                         )
                     }
@@ -222,25 +305,32 @@ fun OnlineMultiplayerLobbyCard(
                     Button(
                         onClick = { onCreatePrivateRoom(selectedGame) },
                         enabled = !isBusy,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = OnlineChampagneGold,
+                            contentColor = Color(0xFF090E1A)
+                        ),
                         modifier = Modifier
                             .weight(1f)
                             .testTag("online_create_room_btn")
                     ) {
                         Icon(Icons.Default.GroupAdd, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text(gStrings.createPrivateRoomLabel, maxLines = 1, style = MaterialTheme.typography.labelMedium)
+                        Text(gStrings.createPrivateRoomLabel, maxLines = 1, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold)
                     }
                     Button(
                         onClick = { onQuickMatch(selectedGame) },
                         enabled = !isBusy,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = OnlineMintGlow,
+                            contentColor = Color(0xFF042F2E)
+                        ),
                         modifier = Modifier
                             .weight(1f)
                             .testTag("online_quick_match_btn")
                     ) {
                         Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text(gStrings.quickMatchLabel, maxLines = 1, style = MaterialTheme.typography.labelMedium)
+                        Text(gStrings.quickMatchLabel, maxLines = 1, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold)
                     }
                 }
 
@@ -254,6 +344,14 @@ fun OnlineMultiplayerLobbyCard(
                         onValueChange = { joinCode = it.uppercase().take(6) },
                         label = { Text(gStrings.enterRoomCodeHint) },
                         singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = OnlineIvory,
+                            unfocusedTextColor = OnlineIvory,
+                            focusedBorderColor = OnlineChampagneGold,
+                            unfocusedBorderColor = OnlineSlate.copy(alpha = 0.45f),
+                            focusedLabelColor = OnlineChampagneGold,
+                            unfocusedLabelColor = OnlineSlate
+                        ),
                         modifier = Modifier
                             .weight(1f)
                             .testTag("online_join_code_input")
@@ -263,13 +361,15 @@ fun OnlineMultiplayerLobbyCard(
                             if (joinCode.length == 6) onJoinByCode(joinCode)
                         },
                         enabled = !isBusy && joinCode.length == 6,
+                        border = BorderStroke(1.dp, OnlineChampagneGold.copy(alpha = 0.6f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = OnlineChampagneGold),
                         modifier = Modifier
                             .height(54.dp)
                             .testTag("online_join_room_btn")
                     ) {
                         Icon(Icons.AutoMirrored.Filled.Login, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text(gStrings.joinByCodeLabel)
+                        Text(gStrings.joinByCodeLabel, fontWeight = FontWeight.Bold)
                     }
                 }
 
@@ -278,7 +378,7 @@ fun OnlineMultiplayerLobbyCard(
                         text = if (gStrings.isBn) "টুর্নামেন্ট এন্ট্রি: ৳${selectedEntryFee.toInt()} • হারলে ১০০% গেম ওয়ালেটে ক্যাশব্যাক"
                         else "Tournament Stake: ৳${selectedEntryFee.toInt()} • 100% Loss Cashback to Game Wallet",
                         style = MaterialTheme.typography.labelSmall,
-                        color = financeColors.champagneGold,
+                        color = OnlineChampagneGold,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -289,12 +389,14 @@ fun OnlineMultiplayerLobbyCard(
                         Text(
                             text = if (gStrings.isBn) "চলমান অনলাইন রুম" else "Active Online Rooms",
                             style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            color = OnlineIvory
                         )
                         activeOrWaiting.take(3).forEach { rm ->
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                color = OnlineObsidianElevated,
+                                border = BorderStroke(1.dp, OnlineMintGlow.copy(alpha = 0.25f)),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(12.dp))
@@ -308,12 +410,13 @@ fun OnlineMultiplayerLobbyCard(
                                     Text(
                                         text = "${rm.gameType} • #${rm.roomCode}",
                                         style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
+                                        color = OnlineIvory
                                     )
                                     Text(
                                         text = rm.status,
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = if (rm.status == "PLAYING") Color(0xFF059669) else Color(0xFFD97706),
+                                        color = if (rm.status == "PLAYING") OnlineMintSoft else OnlineChampagneGold,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
@@ -431,7 +534,7 @@ fun OnlineRoomLiveScreen(
             }
         }
 
-        // Settlement Cashback / Prize Banner
+        // Settlement Cashback / Prize / Coin Reward Banner
         if (settlementReceipt != null && settlementReceipt.creditedAmount > 0.0) {
             TournamentSettlementBanner(receipt = settlementReceipt, gStrings = gStrings)
         }
@@ -447,8 +550,8 @@ fun OnlineRoomLiveScreen(
                 )
                 Surface(
                     shape = RoundedCornerShape(22.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, skinPalette.accentBorder.copy(alpha = 0.5f)),
+                    color = OnlineObsidianCard,
+                    border = BorderStroke(1.dp, OnlineChampagneGold.copy(alpha = 0.5f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -461,12 +564,12 @@ fun OnlineRoomLiveScreen(
                                 .size(64.dp)
                                 .graphicsLayer { scaleX = pulseScale; scaleY = pulseScale }
                                 .clip(CircleShape)
-                                .background(skinPalette.frameEnd.copy(alpha = 0.2f)),
+                                .background(OnlineEmeraldDeep),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.Wifi, contentDescription = null, tint = skinPalette.accentBorder, modifier = Modifier.size(32.dp))
+                            Icon(Icons.Default.Wifi, contentDescription = null, tint = OnlineChampagneGold, modifier = Modifier.size(32.dp))
                         }
-                        Text(gStrings.waitingForFriendLabel, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(gStrings.waitingForFriendLabel, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = OnlineIvory)
                         Text(
                             text = room.roomCode,
                             style = MaterialTheme.typography.displaySmall.copy(
@@ -474,31 +577,38 @@ fun OnlineRoomLiveScreen(
                                 fontWeight = FontWeight.ExtraBold,
                                 letterSpacing = 4.sp
                             ),
-                            color = MaterialTheme.colorScheme.primary
+                            color = OnlineChampagneGold
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            OutlinedButton(onClick = {
-                                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                                cm?.setPrimaryClip(ClipData.newPlainText("Room Code", room.roomCode))
-                                Toast.makeText(context, "Copied: ${room.roomCode}", Toast.LENGTH_SHORT).show()
-                            }) {
+                            OutlinedButton(
+                                onClick = {
+                                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                    cm?.setPrimaryClip(ClipData.newPlainText("Room Code", room.roomCode))
+                                    Toast.makeText(context, "Copied: ${room.roomCode}", Toast.LENGTH_SHORT).show()
+                                },
+                                border = BorderStroke(1.dp, OnlineChampagneGold.copy(alpha = 0.6f)),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = OnlineChampagneGold)
+                            ) {
                                 Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(4.dp))
                                 Text("Copy")
                             }
-                            Button(onClick = {
-                                val share = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(
-                                        Intent.EXTRA_TEXT,
-                                        "Join my FinPlay Pro ${room.gameType} match! Room Code: ${room.roomCode}"
-                                    )
-                                }
-                                runCatching { context.startActivity(Intent.createChooser(share, gStrings.shareCodeLabel)) }
-                            }) {
+                            Button(
+                                onClick = {
+                                    val share = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(
+                                            Intent.EXTRA_TEXT,
+                                            "Join my FinPlay Pro ${room.gameType} match for 3x Game Coins! Room Code: ${room.roomCode}"
+                                        )
+                                    }
+                                    runCatching { context.startActivity(Intent.createChooser(share, gStrings.shareCodeLabel)) }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = OnlineMintGlow, contentColor = OnlineEmeraldDeep)
+                            ) {
                                 Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text(gStrings.shareCodeLabel)
+                                Text(gStrings.shareCodeLabel, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -514,7 +624,8 @@ fun OnlineRoomLiveScreen(
                     }
                     Surface(
                         shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer,
+                        color = OnlineObsidianElevated,
+                        border = BorderStroke(1.dp, OnlineChampagneGold.copy(alpha = 0.5f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
@@ -522,34 +633,19 @@ fun OnlineRoomLiveScreen(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text(resultText, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
-                            Button(onClick = onLeaveOrForfeit) {
-                                Text(if (gStrings.isBn) "এরিনায় ফিরে যান" else "Back to Arena")
+                            Text(resultText, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = OnlineChampagneGold)
+                            Button(
+                                onClick = onLeaveOrForfeit,
+                                colors = ButtonDefaults.buttonColors(containerColor = OnlineChampagneGold, contentColor = Color(0xFF090E1A))
+                            ) {
+                                Text(if (gStrings.isBn) "এরিনায় ফিরে যান" else "Back to Arena", fontWeight = FontWeight.Bold)
                             }
                         }
                     }
                 }
 
-                // Live Interactive Synced Board per Game Type
+                // Live Interactive Synced Board per Game Type (all 7 inbuilt games supported)
                 when (room.gameType) {
-                    "CONNECT_FOUR" -> OnlineConnectFourBoard(
-                        room = room,
-                        isHost = isHost,
-                        isMyTurn = isMyTurn,
-                        localUid = localUid,
-                        opponentUid = opponentUid,
-                        skinPalette = skinPalette,
-                        onSubmitMove = onSubmitMove
-                    )
-                    "REVERSI" -> OnlineReversiBoard(
-                        room = room,
-                        isHost = isHost,
-                        isMyTurn = isMyTurn,
-                        localUid = localUid,
-                        opponentUid = opponentUid,
-                        skinPalette = skinPalette,
-                        onSubmitMove = onSubmitMove
-                    )
                     "CHESS" -> OnlineChessBoard(
                         room = room,
                         isHost = isHost,
@@ -569,7 +665,16 @@ fun OnlineRoomLiveScreen(
                         gStrings = gStrings,
                         onSubmitMove = onSubmitMove
                     )
-                    "AETHER_CROWN" -> OnlineAetherControlBoard(
+                    "SHOLO_GUTI" -> OnlineSholoGutiBoard(
+                        room = room,
+                        isHost = isHost,
+                        isMyTurn = isMyTurn,
+                        localUid = localUid,
+                        opponentUid = opponentUid,
+                        skinPalette = skinPalette,
+                        onSubmitMove = onSubmitMove
+                    )
+                    "SNAKES_LADDERS" -> OnlineSnakesLaddersBoard(
                         room = room,
                         isHost = isHost,
                         isMyTurn = isMyTurn,
@@ -579,13 +684,21 @@ fun OnlineRoomLiveScreen(
                         gStrings = gStrings,
                         onSubmitMove = onSubmitMove
                     )
+                    else -> OnlineActionDuelBoard(
+                        room = room,
+                        localUid = localUid,
+                        opponentUid = opponentUid,
+                        gStrings = gStrings,
+                        onSubmitMove = onSubmitMove
+                    )
                 }
             }
 
             else -> {
                 Text(
                     text = if (gStrings.isBn) "রুম বাতিল করা হয়েছে।" else "Room was cancelled.",
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = OnlineIvory
                 )
                 Button(onClick = onLeaveOrForfeit) {
                     Text(if (gStrings.isBn) "ফিরে যান" else "Return")
@@ -601,14 +714,16 @@ fun TournamentSettlementBanner(
     gStrings: GameUiStrings,
     modifier: Modifier = Modifier
 ) {
-    val isCashback = receipt.outcome == GameMatchResult.LOSS
+    val isFreeCoinBonus = receipt.entryFee <= 0.0
+    val isCashback = !isFreeCoinBonus && receipt.outcome == GameMatchResult.LOSS
     val isWin = receipt.outcome == GameMatchResult.WIN
     val bg = when {
-        isWin -> listOf(Color(0xFF065F46), Color(0xFF059669))
-        isCashback -> listOf(Color(0xFF312E81), Color(0xFF6D28D9))
+        isWin || isFreeCoinBonus -> listOf(Color(0xFF065F46), Color(0xFF059669))
+        isCashback -> listOf(Color(0xFF141F35), Color(0xFF1E3A5F))
         else -> listOf(Color(0xFF334155), Color(0xFF475569))
     }
     val title = when {
+        isFreeCoinBonus -> if (gStrings.isBn) "🪙 ম্যাচ রিওয়ার্ড কয়েন যোগ হয়েছে!" else "🪙 Match Game Coins Earned!"
         isWin -> gStrings.prizeWonTitle
         isCashback -> gStrings.cashbackReceivedTitle
         else -> gStrings.entryRefundedTitle
@@ -631,7 +746,7 @@ fun TournamentSettlementBanner(
                 color = Color.White
             )
             Text(
-                text = "+৳${receipt.creditedAmount.toInt()} → ${receipt.creditedWalletBucket} WALLET",
+                text = "+${receipt.creditedAmount.toInt()} → ${receipt.creditedWalletBucket} WALLET",
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFFFDE68A)
@@ -643,7 +758,7 @@ fun TournamentSettlementBanner(
 // ---- Synced Interactive Online Boards ----
 
 @Composable
-private fun OnlineConnectFourBoard(
+private fun OnlineSholoGutiBoard(
     room: MultiplayerRoomDoc,
     isHost: Boolean,
     isMyTurn: Boolean,
@@ -653,9 +768,15 @@ private fun OnlineConnectFourBoard(
     onSubmitMove: (String, String, String, Int, String, String, Boolean) -> Unit
 ) {
     val state = remember(room.statePayload) {
-        OnlineMatchSerializer.decodeConnectFour(room.statePayload) ?: ConnectFourEngine.newGame()
+        OnlineMatchSerializer.decodeSholoGuti(room.statePayload) ?: SholoGutiEngine.newGame()
     }
-    val legalCols = remember(state) { ConnectFourEngine.legalColumns(state).toSet() }
+    val myColor = if (isHost) SholoGutiPlayer.RUBY else SholoGutiPlayer.GOLD
+    var selectedNode by remember(room.moveCount) { mutableStateOf<Int?>(state.chainedNodeId) }
+    val legalMoves = remember(state) { SholoGutiEngine.allLegalMoves(state) }
+    val legalMovesFromSelected = remember(selectedNode, legalMoves) {
+        if (selectedNode == null) emptyMap()
+        else legalMoves.filter { it.from == selectedNode }.associateBy { it.to }
+    }
 
     Surface(
         shape = RoundedCornerShape(18.dp),
@@ -663,59 +784,101 @@ private fun OnlineConnectFourBoard(
         border = BorderStroke(1.5.dp, skinPalette.accentBorder),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                (0 until ConnectFourState.COLS).forEach { col ->
-                    val enabled = isMyTurn && col in legalCols
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = if (enabled) skinPalette.accentBorder else Color.White.copy(alpha = 0.12f),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(34.dp)
-                            .clickable(enabled = enabled) {
-                                GameSoundEngine.play(GameSoundEffect.MOVE)
-                                val next = ConnectFourEngine.dropDisc(state, col)
-                                val finished = next.outcome != ConnectFourOutcome.ONGOING
-                                val winner = when (next.outcome) {
-                                    ConnectFourOutcome.SOLAR_WINS -> room.hostUid
-                                    ConnectFourOutcome.CRIMSON_WINS -> room.guestUid
-                                    ConnectFourOutcome.DRAW -> "DRAW"
-                                    ConnectFourOutcome.ONGOING -> ""
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Ruby: ${state.rubyCount} (Cap ${state.rubyCaptured})", color = Color(0xFFFB7185), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text("Gold: ${state.goldCount} (Cap ${state.goldCaptured})", color = Color(0xFFF5C451), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+            Text(state.statusLog, color = Color.White, style = MaterialTheme.typography.labelSmall)
+
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(0.68f)
+                    .pointerInput(state, isMyTurn, selectedNode) {
+                        detectTapGestures { offset ->
+                            if (!isMyTurn || state.outcome != SholoGutiOutcome.ONGOING) return@detectTapGestures
+                            val w = size.width.toFloat().coerceAtLeast(1f)
+                            val h = size.height.toFloat().coerceAtLeast(1f)
+                            val tapped = SholoGutiEngine.NODES.minByOrNull { node ->
+                                val nx = if (isHost) node.normX else (1f - node.normX)
+                                val ny = if (isHost) node.normY else (1f - node.normY)
+                                hypot(offset.x - nx * w, offset.y - ny * h)
+                            } ?: return@detectTapGestures
+                            val tx = (if (isHost) tapped.normX else 1f - tapped.normX) * w
+                            val ty = (if (isHost) tapped.normY else 1f - tapped.normY) * h
+                            if (hypot(offset.x - tx, offset.y - ty) > w * 0.12f) return@detectTapGestures
+
+                            val move = legalMovesFromSelected[tapped.id]
+                            if (move != null) {
+                                GameSoundEngine.play(if (move.isCapture) GameSoundEffect.CAPTURE else GameSoundEffect.MOVE)
+                                val next = SholoGutiEngine.applyMove(state, move)
+                                val finished = next.outcome != SholoGutiOutcome.ONGOING
+                                val nextTurnUid = when {
+                                    finished -> localUid
+                                    next.turn == SholoGutiPlayer.RUBY -> room.hostUid
+                                    else -> room.guestUid
                                 }
+                                val winner = when (next.outcome) {
+                                    SholoGutiOutcome.RUBY_WINS -> room.hostUid
+                                    SholoGutiOutcome.GOLD_WINS -> room.guestUid
+                                    SholoGutiOutcome.DRAW -> "DRAW"
+                                    SholoGutiOutcome.ONGOING -> ""
+                                }
+                                selectedNode = next.chainedNodeId
                                 onSubmitMove(
                                     room.roomCode,
-                                    OnlineMatchSerializer.encodeConnectFour(next),
-                                    if (finished) localUid else opponentUid,
+                                    OnlineMatchSerializer.encodeSholoGuti(next),
+                                    nextTurnUid,
                                     room.moveCount + 1,
-                                    "Dropped in Col ${col + 1}",
+                                    next.statusLog,
                                     winner,
                                     finished
                                 )
+                            } else if (state.chainedNodeId == null && state.board[tapped.id] == myColor && legalMoves.any { it.from == tapped.id }) {
+                                selectedNode = tapped.id
                             }
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text("↓${col + 1}", fontWeight = FontWeight.Bold, color = if (enabled) Color.Black else Color.Gray, fontSize = 12.sp)
                         }
                     }
+            ) {
+                val w = size.width
+                val h = size.height
+                fun pt(id: Int): Offset {
+                    val n = SholoGutiEngine.NODES[id]
+                    val x = (if (isHost) n.normX else 1f - n.normX) * w
+                    val y = (if (isHost) n.normY else 1f - n.normY) * h
+                    return Offset(x, y)
                 }
-            }
-            for (r in 0 until ConnectFourState.ROWS) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    for (c in 0 until ConnectFourState.COLS) {
-                        val disc = state.board[r * ConnectFourState.COLS + c]
-                        val fill = when (disc) {
-                            ConnectFourDisc.SOLAR -> Color(0xFFF59E0B)
-                            ConnectFourDisc.CRIMSON -> Color(0xFFE11D48)
-                            ConnectFourDisc.EMPTY -> Color.Black.copy(alpha = 0.35f)
-                        }
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .aspectRatio(1f)
-                                .clip(CircleShape)
-                                .background(fill)
+
+                SholoGutiEngine.EDGES.forEach { (a, b) ->
+                    drawLine(
+                        color = skinPalette.accentBorder.copy(alpha = 0.5f),
+                        start = pt(a),
+                        end = pt(b),
+                        strokeWidth = 3.5f,
+                        cap = StrokeCap.Round
+                    )
+                }
+
+                SholoGutiEngine.NODES.forEach { node ->
+                    val center = pt(node.id)
+                    val targetMove: SholoGutiMove? = legalMovesFromSelected[node.id]
+                    drawCircle(color = skinPalette.boardDark, radius = 9f, center = center)
+                    if (targetMove != null) {
+                        drawCircle(
+                            color = if (targetMove.isCapture) Color(0xFFEF4444) else Color(0xFF10B981),
+                            radius = w * 0.042f,
+                            center = center
                         )
+                    }
+                    val bead = state.board[node.id]
+                    if (bead != null) {
+                        val isSel = selectedNode == node.id
+                        val fill = if (bead == SholoGutiPlayer.RUBY) Color(0xFFE11D48) else Color(0xFFF5C451)
+                        if (isSel) {
+                            drawCircle(color = Color.White, radius = w * 0.056f, center = center, style = Stroke(width = 4f))
+                        }
+                        drawCircle(color = fill, radius = w * 0.046f, center = center)
                     }
                 }
             }
@@ -724,19 +887,23 @@ private fun OnlineConnectFourBoard(
 }
 
 @Composable
-private fun OnlineReversiBoard(
+private fun OnlineSnakesLaddersBoard(
     room: MultiplayerRoomDoc,
     isHost: Boolean,
     isMyTurn: Boolean,
     localUid: String,
     opponentUid: String,
     skinPalette: BoardSkinPalette,
+    gStrings: GameUiStrings,
     onSubmitMove: (String, String, String, Int, String, String, Boolean) -> Unit
 ) {
     val state = remember(room.statePayload) {
-        OnlineMatchSerializer.decodeReversi(room.statePayload) ?: ReversiEngine.newGame()
+        OnlineMatchSerializer.decodeSnakes(
+            room.statePayload,
+            hostName = room.hostName,
+            guestName = room.guestName.ifBlank { "Opponent" }
+        ) ?: SnakesLaddersEngine.newGame(2, playVsBot = false)
     }
-    val legalByIndex = remember(state) { ReversiEngine.legalMoves(state).associateBy { it.index } }
 
     Surface(
         shape = RoundedCornerShape(18.dp),
@@ -744,60 +911,121 @@ private fun OnlineReversiBoard(
         border = BorderStroke(1.5.dp, skinPalette.accentBorder),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Emerald: ${state.emeraldScore}", color = Color(0xFF34D399), fontWeight = FontWeight.Bold)
-                Text("Pearl: ${state.pearlScore}", color = Color(0xFFFEF3C7), fontWeight = FontWeight.Bold)
-            }
-            for (r in 0 until 8) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    for (c in 0 until 8) {
-                        val idx = r * 8 + c
-                        val disc = state.board[idx]
-                        val move = legalByIndex[idx]
-                        val canTap = isMyTurn && move != null
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .aspectRatio(1f)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(if ((r + c) % 2 == 0) skinPalette.boardDark else skinPalette.feltSurface)
-                                .clickable(enabled = canTap) {
-                                    GameSoundEngine.play(GameSoundEffect.MOVE)
-                                    val next = ReversiEngine.applyMove(state, move!!.index)
-                                    val finished = next.outcome != ReversiOutcome.ONGOING
-                                    val nextTurnUid = when {
-                                        finished -> localUid
-                                        next.turn == ReversiDisc.EMERALD -> room.hostUid
-                                        else -> room.guestUid
-                                    }
-                                    val winner = when (next.outcome) {
-                                        ReversiOutcome.EMERALD_WINS -> room.hostUid
-                                        ReversiOutcome.PEARL_WINS -> room.guestUid
-                                        ReversiOutcome.DRAW -> "DRAW"
-                                        ReversiOutcome.ONGOING -> ""
-                                    }
-                                    onSubmitMove(
-                                        room.roomCode,
-                                        OnlineMatchSerializer.encodeReversi(next),
-                                        nextTurnUid,
-                                        room.moveCount + 1,
-                                        "Flipped ${move.flippedIndices.size} discs",
-                                        winner,
-                                        finished
-                                    )
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            when (disc) {
-                                ReversiDisc.EMERALD -> Box(Modifier.fillMaxSize(0.76f).clip(CircleShape).background(Color(0xFF10B981)))
-                                ReversiDisc.PEARL -> Box(Modifier.fillMaxSize(0.76f).clip(CircleShape).background(Color(0xFFFEF3C7)))
-                                ReversiDisc.EMPTY -> if (canTap) {
-                                    Box(Modifier.size(8.dp).clip(CircleShape).background(skinPalette.accentBorder))
-                                }
-                            }
-                        }
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                text = "🎲 Dice: ${state.lastDiceValue} • ${state.statusLog}",
+                style = MaterialTheme.typography.titleSmall,
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
+            state.players.forEach { p ->
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color.White.copy(alpha = 0.08f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(p.name, color = Color(p.color), fontWeight = FontWeight.ExtraBold)
+                        Text(
+                            text = if (p.position == 0) "Start (0/100)" else "Tile ${p.position} / 100",
+                            color = OnlineChampagneGold,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
+                }
+            }
+            if (isMyTurn && state.phase != SnakesPhase.GAME_OVER) {
+                Button(
+                    onClick = {
+                        GameSoundEngine.play(GameSoundEffect.DICE_TICK)
+                        val res = SnakesLaddersEngine.rollAndMove(state)
+                        val next = res.nextState
+                        val finished = next.phase == SnakesPhase.GAME_OVER
+                        val nextTurnUid = when {
+                            finished -> localUid
+                            next.currentTurnIndex == 0 -> room.hostUid
+                            else -> room.guestUid
+                        }
+                        val winnerUid = when (next.winner?.id) {
+                            0 -> room.hostUid
+                            1 -> room.guestUid
+                            else -> ""
+                        }
+                        onSubmitMove(
+                            room.roomCode,
+                            OnlineMatchSerializer.encodeSnakes(next),
+                            nextTurnUid,
+                            room.moveCount + 1,
+                            next.statusLog,
+                            winnerUid,
+                            finished
+                        )
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = OnlineChampagneGold, contentColor = Color(0xFF090E1A)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("🎲 ${gStrings.rollDice}", fontWeight = FontWeight.ExtraBold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OnlineActionDuelBoard(
+    room: MultiplayerRoomDoc,
+    localUid: String,
+    opponentUid: String,
+    gStrings: GameUiStrings,
+    onSubmitMove: (String, String, String, Int, String, String, Boolean) -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = OnlineObsidianCard,
+        border = BorderStroke(1.2.dp, OnlineChampagneGold.copy(alpha = 0.55f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "⚔️ ${room.gameType.replace("_", " ")} Online Challenge",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.ExtraBold,
+                color = OnlineChampagneGold
+            )
+            Text(
+                text = if (gStrings.isBn) "দুই প্লেয়ার লাইভ রুমে সংযুক্ত আছেন! ম্যাচ শেষে রেজাল্ট সাবমিট করলে ৩x গেম কয়েন ও পয়েন্ট যোগ হবে।"
+                else "Both players are connected! Submit your duel outcome below once your match concludes for 3x Game Coins.",
+                style = MaterialTheme.typography.bodySmall,
+                color = OnlineSlate,
+                textAlign = TextAlign.Center
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = {
+                        onSubmitMove(room.roomCode, room.statePayload, localUid, room.moveCount + 1, "Victory Claimed", localUid, true)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = OnlineMintGlow, contentColor = OnlineEmeraldDeep),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(if (gStrings.isBn) "জয় সাবমিট" else "Claim Win", fontWeight = FontWeight.ExtraBold)
+                }
+                OutlinedButton(
+                    onClick = {
+                        onSubmitMove(room.roomCode, room.statePayload, opponentUid, room.moveCount + 1, "Draw", "DRAW", true)
+                    },
+                    border = BorderStroke(1.dp, OnlineChampagneGold.copy(alpha = 0.6f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = OnlineChampagneGold),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(if (gStrings.isBn) "ড্র" else "Draw", fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -933,7 +1161,6 @@ private fun OnlineLudoControlBoard(
                 fontWeight = FontWeight.Bold
             )
 
-            // Progress track overview for both players
             listOf(LudoColor.RED to room.hostName, LudoColor.YELLOW to room.guestName).forEach { (col, name) ->
                 val list = state.tokens[col].orEmpty()
                 Surface(
@@ -1016,109 +1243,6 @@ private fun OnlineLudoControlBoard(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("🎲 ${gStrings.rollDice}", fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun OnlineAetherControlBoard(
-    room: MultiplayerRoomDoc,
-    isHost: Boolean,
-    isMyTurn: Boolean,
-    localUid: String,
-    opponentUid: String,
-    skinPalette: BoardSkinPalette,
-    gStrings: GameUiStrings,
-    onSubmitMove: (String, String, String, Int, String, String, Boolean) -> Unit
-) {
-    val state = remember(room.statePayload) {
-        OnlineMatchSerializer.decodeAether(room.statePayload) ?: AetherCrownEngine.newGame(playVsBot = false)
-    }
-    val actions = remember(state) { AetherCrownEngine.legalActions(state) }
-
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = skinPalette.feltSurface,
-        border = BorderStroke(1.5.dp, skinPalette.accentBorder),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(
-                    "Solar: ⚡${state.charges[AetherPlayer.SOLAR] ?: 0}",
-                    color = Color(0xFF34D399),
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    "${gStrings.roundLabel} ${state.roundCount}",
-                    color = Color(0xFFFDE68A),
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    "Lunar: ⚡${state.charges[AetherPlayer.LUNAR] ?: 0}",
-                    color = Color(0xFFF59E0B),
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            Text(state.statusLog, color = Color.White, style = MaterialTheme.typography.bodySmall)
-
-            if (isMyTurn && state.phase == AetherTurnPhase.ROLL_DICE) {
-                Button(
-                    onClick = {
-                        GameSoundEngine.play(GameSoundEffect.DICE_TICK)
-                        val d1 = Random.nextInt(1, 5)
-                        val d2 = Random.nextInt(1, 5)
-                        val next = AetherCrownEngine.rollDice(state, d1, d2)
-                        val nextTurnUid = if (next.turn == AetherPlayer.SOLAR) room.hostUid else room.guestUid
-                        onSubmitMove(
-                            room.roomCode,
-                            OnlineMatchSerializer.encodeAether(next),
-                            nextTurnUid,
-                            room.moveCount + 1,
-                            "Rolled [$d1, $d2]",
-                            "",
-                            false
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("✦ ${gStrings.rollTwinDice}", fontWeight = FontWeight.Bold)
-                }
-            } else if (isMyTurn && state.phase == AetherTurnPhase.ALLOCATE_DICE) {
-                actions.take(8).forEach { act ->
-                    OutlinedButton(
-                        onClick = {
-                            GameSoundEngine.play(GameSoundEffect.MOVE)
-                            val next = AetherCrownEngine.applyAction(state, act)
-                            val finished = next.phase == AetherTurnPhase.GAME_OVER
-                            val nextTurnUid = when {
-                                finished -> localUid
-                                next.turn == AetherPlayer.SOLAR -> room.hostUid
-                                else -> room.guestUid
-                            }
-                            val winner = when (next.winner) {
-                                AetherPlayer.SOLAR -> room.hostUid
-                                AetherPlayer.LUNAR -> room.guestUid
-                                null -> ""
-                            }
-                            onSubmitMove(
-                                room.roomCode,
-                                OnlineMatchSerializer.encodeAether(next),
-                                nextTurnUid,
-                                room.moveCount + 1,
-                                act.description,
-                                winner,
-                                finished
-                            )
-                        },
-                        border = BorderStroke(1.dp, skinPalette.accentBorder),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(act.description, style = MaterialTheme.typography.labelMedium)
-                    }
                 }
             }
         }

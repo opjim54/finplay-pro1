@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "107187305250",
+    "project_id": "gen-lang-client-0974217234",
+    "storage_bucket": "gen-lang-client-0974217234.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:107187305250:android:c5f84d1b355b62d2ef837b",
+        "android_client_info": {
+          "package_name": "com.aistudio.smartfinance.kzmwqr"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "107187305250-5lhf07142r1idlujdtmehq7936qtcamp.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.aistudio.smartfinance.kzmwqr",
+            "certificate_hash": "1a994334e5fef0bee483e095022473c45df63864"
+          }
+        },
+        {
+          "client_id": "107187305250-o2ctoe8n1t65u7hrvrcm1l26b8607qof.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAW8RmkWDGxhanJN2Agyvpsoc5sBCHKVkM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "107187305250-o2ctoe8n1t65u7hrvrcm1l26b8607qof.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

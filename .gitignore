@@ -17,10 +17,12 @@ local.properties
 .env
 debug.keystore
 *-debug.log
-*.blend
-.superpowers/
+
+# Exclude raw 3D modeling and animation source folders as requested by user
+3dmodel/
+animation/
+
+# Dev tooling & logs
 .aistudio/
-
-
-
-finplay_pro_full_apk_build/
+.superpowers/
+firestore-emulator.log

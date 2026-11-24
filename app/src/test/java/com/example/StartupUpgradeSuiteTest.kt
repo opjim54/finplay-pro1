@@ -25,29 +25,27 @@ import com.example.domain.DateTimeUtil
 import com.example.domain.StylishTextEngine
 import com.example.domain.games.OnlineMatchSerializer
 import com.example.domain.games.PlayArmoryCatalog
-import com.example.domain.games.AetherBotAi
-import com.example.domain.games.AetherCrownEngine
-import com.example.domain.games.AetherMoveType
-import com.example.domain.games.AetherPlayer
-import com.example.domain.games.AetherTurnPhase
-import com.example.domain.games.AetherZone
+import com.example.domain.games.CarromEngine
+import com.example.domain.games.CarromPhase
 import com.example.domain.games.ChessBotAi
 import com.example.domain.games.ChessEngine
+import com.example.domain.games.ChessGameState
 import com.example.domain.games.ChessMove
 import com.example.domain.games.ChessOutcome
-import com.example.domain.games.ConnectFourBotAi
-import com.example.domain.games.ConnectFourDisc
-import com.example.domain.games.ConnectFourEngine
-import com.example.domain.games.ConnectFourOutcome
+import com.example.domain.games.ChessPiece
 import com.example.domain.games.PieceColor
 import com.example.domain.games.PieceType
 import com.example.domain.games.LudoBotAi
 import com.example.domain.games.LudoColor
 import com.example.domain.games.LudoEngine
 import com.example.domain.games.LudoPhase
-import com.example.domain.games.ReversiBotAi
-import com.example.domain.games.ReversiDisc
-import com.example.domain.games.ReversiEngine
+import com.example.domain.games.SholoGutiBotAi
+import com.example.domain.games.SholoGutiEngine
+import com.example.domain.games.SholoGutiMove
+import com.example.domain.games.SholoGutiOutcome
+import com.example.domain.games.SholoGutiPlayer
+import com.example.domain.games.SholoGutiState
+import com.example.domain.games.SnakesLaddersEngine
 import com.example.i18n.AppLanguage
 import com.example.i18n.LanguageManager
 import kotlinx.coroutines.flow.first
@@ -277,31 +275,41 @@ class StartupUpgradeSuiteTest {
     }
 
     @Test
-    fun `aether crown engine handles dual dice vault entry flux bridge flip and bot actions`() {
-        var state = AetherCrownEngine.newGame(playVsBot = true)
-        assertEquals(AetherTurnPhase.ROLL_DICE, state.phase)
+    fun `sholo guti 16 beads engine supports adjacent slide multi jump chain capture and bot ai`() {
+        var state = SholoGutiEngine.newGame()
+        assertEquals(16, state.rubyCount)
+        assertEquals(16, state.goldCount)
+        assertEquals(SholoGutiPlayer.RUBY, state.turn)
 
-        // Roll [1, 4] -> deploys solar token onto outer node 0 (an Aether Switch node!)
-        state = AetherCrownEngine.rollDice(state, 1, 4)
-        val deploy = AetherCrownEngine.legalActions(state).first { it.type == AetherMoveType.DEPLOY_OR_MOVE_OUTER && it.diceCost == 1 }
-        val initialPhase = state.bridgesPhaseEven
-        state = AetherCrownEngine.applyAction(state, deploy)
-        // Landing on home switch node 0 grants +1 charge & flips flux bridges
-        assertEquals(!initialPhase, state.bridgesPhaseEven)
-        assertTrue((state.charges[AetherPlayer.SOLAR] ?: 0) >= 1)
+        // Slide Ruby bead from (2,5)=23 into empty center (2,4)=18
+        val legal23 = SholoGutiEngine.legalMovesForNode(state, 23)
+        assertTrue(legal23.any { it.from == 23 && it.to == 18 && !it.isCapture })
+        state = SholoGutiEngine.applyMove(state, SholoGutiMove(from = 23, to = 18))
+        assertEquals(SholoGutiPlayer.GOLD, state.turn)
 
-        // Next action move with [4] from 0 -> 4 (also switch node)
-        val moveAct = AetherCrownEngine.legalActions(state).firstOrNull { it.type == AetherMoveType.DEPLOY_OR_MOVE_OUTER && it.diceCost == 4 }
-        assertNotNull(moveAct)
-        state = AetherCrownEngine.applyAction(state, moveAct!!)
-        assertEquals(AetherPlayer.LUNAR, state.turn)
+        // Bot AI responds for GOLD
+        val botMove = SholoGutiBotAi.chooseMove(state, accuracyPercent = 90, rng = Random(7))
+        assertNotNull(botMove)
+        state = SholoGutiEngine.applyMove(state, botMove!!)
+        assertEquals(SholoGutiPlayer.RUBY, state.turn)
 
-        // Bot rolls [4, 4] doubles & chooses a valid move
-        state = AetherCrownEngine.rollDice(state, 4, 4)
-        val botAct = AetherBotAi.chooseAction(state, accuracyPercent = 90, rng = Random(7))
-        assertNotNull(botAct)
-        state = AetherCrownEngine.applyAction(state, botAct!!)
-        assertFalse(state.tokens[AetherPlayer.LUNAR]!!.all { it.zone == AetherZone.DOCKED })
+        // Verify double-jump chain capture along col 2: 23 -> 13 (captures 18) -> 4 (captures 8)
+        val chainBoard = MutableList<SholoGutiPlayer?>(SholoGutiEngine.NODE_COUNT) { null }
+        chainBoard[23] = SholoGutiPlayer.RUBY
+        chainBoard[18] = SholoGutiPlayer.GOLD
+        chainBoard[8] = SholoGutiPlayer.GOLD
+        chainBoard[0] = SholoGutiPlayer.GOLD // extra bead so Gold doesn't lose immediately after 2 captures
+        val chainStart = SholoGutiState(board = chainBoard, turn = SholoGutiPlayer.RUBY)
+        val firstJump = SholoGutiEngine.applyMove(chainStart, SholoGutiMove(from = 23, to = 13, capturedNode = 18))
+        assertEquals(13, firstJump.chainedNodeId)
+        assertEquals(SholoGutiPlayer.RUBY, firstJump.turn)
+        assertEquals(1, firstJump.rubyCaptured)
+
+        val secondJump = SholoGutiEngine.applyMove(firstJump, SholoGutiMove(from = 13, to = 4, capturedNode = 8))
+        assertEquals(null, secondJump.chainedNodeId)
+        assertEquals(2, secondJump.rubyCaptured)
+        assertEquals(SholoGutiOutcome.ONGOING, secondJump.outcome)
+        assertEquals(SholoGutiPlayer.GOLD, secondJump.turn)
     }
 
     @Test
@@ -324,32 +332,47 @@ class StartupUpgradeSuiteTest {
     }
 
     @Test
-    fun `reversi and connect four engines validate flips wins and bot moves`() {
-        val revStart = ReversiEngine.newGame()
-        val revLegal = ReversiEngine.legalMoves(revStart)
-        assertEquals(4, revLegal.size)
-        val revNext = ReversiEngine.applyMove(revStart, revLegal.first().index)
-        assertEquals(4, revNext.emeraldScore)
-        assertEquals(1, revNext.pearlScore)
-        assertEquals(ReversiDisc.PEARL, revNext.turn)
-        val revBot = ReversiBotAi.chooseMove(revNext, accuracyPercent = 90, rng = Random(3))
-        assertNotNull(revBot)
+    fun `carrom baseline sliding impulse cap chess same color bishop draw and coin rewards work`() {
+        // 1. Carrom striker slides freely to either side of baseline even with central coin obstacles & keeps controlled power cap
+        assertTrue(CarromEngine.MAX_IMPULSE <= 1.10f)
+        var carrom = CarromEngine.newGame(isVsBot = true)
+        carrom = carrom.copy(
+            pieces = carrom.pieces.map { piece ->
+                if (piece.id == 1) piece.copy(x = 0.20f, y = carrom.strikerBaselineY) else piece
+            }
+        )
+        val slidRight = CarromEngine.setStrikerBaselineX(carrom, CarromEngine.BASELINE_MAX_X)
+        assertTrue(slidRight.strikerBaselineX > 0.45f)
+        val slidLeft = CarromEngine.setStrikerBaselineX(slidRight, -CarromEngine.BASELINE_MAX_X)
+        assertTrue(slidLeft.strikerBaselineX < -0.45f)
+        val fired = CarromEngine.shootStriker(slidLeft, 5.0f, -5.0f)
+        assertEquals(CarromPhase.MOVING, fired.phase)
+        val striker = fired.pieces.first { it.type == com.example.domain.games.CarromPieceType.STRIKER }
+        val speed = kotlin.math.sqrt(striker.vx * striker.vx + striker.vy * striker.vy)
+        assertEquals(CarromEngine.MAX_IMPULSE, speed, 0.01f)
 
-        var c4 = ConnectFourEngine.newGame()
-        // Drop 4 Solar discs vertically in col 0 interleaved with Crimson in col 1
-        repeat(3) {
-            c4 = ConnectFourEngine.dropDisc(c4, 0) // Solar
-            c4 = ConnectFourEngine.dropDisc(c4, 1) // Crimson
-        }
-        // Bot should block col 0 if it's Crimson's turn, or Solar wins on next col 0 drop
-        assertEquals(ConnectFourDisc.SOLAR, c4.turn)
-        val wonC4 = ConnectFourEngine.dropDisc(c4, 0)
-        assertEquals(ConnectFourOutcome.SOLAR_WINS, wonC4.outcome)
-        assertEquals(4, wonC4.winningCells.size)
+        // 2. Chess FIDE rule: K+B vs K+B on same-colored squares is DRAW_INSUFFICIENT_MATERIAL; opposite-colored stays ONGOING
+        val sameColorBoard = arrayOfNulls<ChessPiece>(64).apply {
+            this[60] = ChessPiece(PieceColor.WHITE, PieceType.KING)   // e1
+            this[58] = ChessPiece(PieceColor.WHITE, PieceType.BISHOP) // c1 (dark: (7+2)%2==1)
+            this[4] = ChessPiece(PieceColor.BLACK, PieceType.KING)    // e8
+            this[5] = ChessPiece(PieceColor.BLACK, PieceType.BISHOP)  // f8 (dark: (0+5)%2==1)
+        }.toList()
+        val sameColorNext = ChessEngine.applyMove(ChessGameState(board = sameColorBoard), ChessMove(60, 59))
+        assertEquals(ChessOutcome.DRAW_INSUFFICIENT_MATERIAL, sameColorNext.outcome)
 
-        val botStart = ConnectFourEngine.dropDisc(ConnectFourEngine.newGame(), 3)
-        val c4BotCol = ConnectFourBotAi.chooseColumn(botStart, accuracyPercent = 95, rng = Random(2))
-        assertNotNull(c4BotCol)
+        val oppColorBoard = arrayOfNulls<ChessPiece>(64).apply {
+            this[60] = ChessPiece(PieceColor.WHITE, PieceType.KING)   // e1
+            this[58] = ChessPiece(PieceColor.WHITE, PieceType.BISHOP) // c1 (dark)
+            this[4] = ChessPiece(PieceColor.BLACK, PieceType.KING)    // e8
+            this[2] = ChessPiece(PieceColor.BLACK, PieceType.BISHOP)  // c8 (light: (0+2)%2==0)
+        }.toList()
+        val oppColorNext = ChessEngine.applyMove(ChessGameState(board = oppColorBoard), ChessMove(60, 59))
+        assertEquals(ChessOutcome.ONGOING, oppColorNext.outcome)
+
+        // 3. Coin reward tier verification: Online/Friend gives 3x Offline rewards
+        assertEquals(25.0, PlayWalletRepository.computeMatchCompletionCoins(GameMatchResult.WIN, isOnlineOrFriend = false), 0.01)
+        assertEquals(75.0, PlayWalletRepository.computeMatchCompletionCoins(GameMatchResult.WIN, isOnlineOrFriend = true), 0.01)
     }
 
     @Test
@@ -653,19 +676,7 @@ class StartupUpgradeSuiteTest {
     }
 
     @Test
-    fun `online match serializer round trips all five game states cleanly`() {
-        val c4 = ConnectFourEngine.dropDisc(ConnectFourEngine.newGame(), 3)
-        val c4Decoded = OnlineMatchSerializer.decodeConnectFour(OnlineMatchSerializer.encodeConnectFour(c4))
-        assertNotNull(c4Decoded)
-        assertEquals(c4.board, c4Decoded!!.board)
-        assertEquals(c4.turn, c4Decoded.turn)
-
-        val rev = ReversiEngine.applyMove(ReversiEngine.newGame(), ReversiEngine.legalMoves(ReversiEngine.newGame()).first().index)
-        val revDecoded = OnlineMatchSerializer.decodeReversi(OnlineMatchSerializer.encodeReversi(rev))
-        assertNotNull(revDecoded)
-        assertEquals(rev.emeraldScore, revDecoded!!.emeraldScore)
-        assertEquals(rev.pearlScore, revDecoded.pearlScore)
-
+    fun `online match serializer round trips arena game states cleanly`() {
         val chess = ChessEngine.applyMove(ChessEngine.newGame(), ChessEngine.legalMoves(ChessEngine.newGame()).first())
         val chessDecoded = OnlineMatchSerializer.decodeChess(OnlineMatchSerializer.encodeChess(chess))
         assertNotNull(chessDecoded)
@@ -678,11 +689,17 @@ class StartupUpgradeSuiteTest {
         assertEquals(6, ludoDecoded!!.diceValue)
         assertEquals(ludo.phase, ludoDecoded.phase)
 
-        val aether = AetherCrownEngine.rollDice(AetherCrownEngine.newGame(playVsBot = false), 2, 4)
-        val aetherDecoded = OnlineMatchSerializer.decodeAether(OnlineMatchSerializer.encodeAether(aether))
-        assertNotNull(aetherDecoded)
-        assertEquals(aether.remainingDice, aetherDecoded!!.remainingDice)
-        assertEquals(aether.phase, aetherDecoded.phase)
+        val sholo = SholoGutiEngine.applyMove(SholoGutiEngine.newGame(), SholoGutiMove(23, 18))
+        val sholoDecoded = OnlineMatchSerializer.decodeSholoGuti(OnlineMatchSerializer.encodeSholoGuti(sholo))
+        assertNotNull(sholoDecoded)
+        assertEquals(sholo.turn, sholoDecoded!!.turn)
+        assertEquals(sholo.board, sholoDecoded.board)
+
+        val snakes = SnakesLaddersEngine.rollAndMove(SnakesLaddersEngine.newGame(2, playVsBot = false), forcedDice = 4).nextState
+        val snakesDecoded = OnlineMatchSerializer.decodeSnakes(OnlineMatchSerializer.encodeSnakes(snakes), hostName = "P1", guestName = "P2")
+        assertNotNull(snakesDecoded)
+        assertEquals(snakes.players[0].position, snakesDecoded!!.players[0].position)
+        assertEquals(snakes.currentTurnIndex, snakesDecoded.currentTurnIndex)
     }
 
     @Test

@@ -848,5 +848,153 @@ test('Minimal canonical Tournament model (title, entryFee, prizePool, playerUids
   assert.equal(bobAddCharlie.status, 403);
 });
 
+test('Tournament Leaderboard (/tournament_leaderboard/{userId}): signed-in Top 10 ranking query, owner bounded updates, anti-cheat & admin controls', async () => {
+  const aliceUrl = `${FIRESTORE_BASE}/tournament_leaderboard/alice_uid`;
+  const bobUrl = `${FIRESTORE_BASE}/tournament_leaderboard/bob_uid`;
+  const ts = isoPast(1000);
+
+  // 1. Unauthenticated read must fail
+  const unauthRead = await fetch(`${FIRESTORE_BASE}/tournament_leaderboard`);
+  assert.equal(unauthRead.status, 403);
+
+  // 2. Owner (Alice) can create her own leaderboard profile with bounded initial matchPoints
+  const aliceCreate = await fetch(aliceUrl, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${aliceToken}` },
+    body: JSON.stringify({
+      fields: {
+        userId: { stringValue: 'alice_uid' },
+        displayName: { stringValue: 'Alice Pro' },
+        avatarId: { stringValue: 'avatar_monarch' },
+        matchPoints: { integerValue: '650' },
+        matchesPlayed: { integerValue: '1' },
+        wins: { integerValue: '1' },
+        totalCoinsEarned: { doubleValue: 120.0 },
+        favoriteGame: { stringValue: 'WAR_LAND' },
+        createdAt: { timestampValue: ts },
+        updatedAt: { timestampValue: ts },
+      },
+    }),
+  });
+  assert.equal(aliceCreate.status, 200, await aliceCreate.text());
+
+  // 3. Owner (Bob) creates a higher-scoring leaderboard entry
+  const bobCreate = await fetch(bobUrl, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${bobToken}` },
+    body: JSON.stringify({
+      fields: {
+        userId: { stringValue: 'bob_uid' },
+        displayName: { stringValue: 'Bob Champion' },
+        avatarId: { stringValue: 'avatar_cyber' },
+        matchPoints: { integerValue: '1450' },
+        matchesPlayed: { integerValue: '2' },
+        wins: { integerValue: '2' },
+        totalCoinsEarned: { doubleValue: 350.0 },
+        favoriteGame: { stringValue: 'LUDO' },
+        createdAt: { timestampValue: ts },
+        updatedAt: { timestampValue: ts },
+      },
+    }),
+  });
+  assert.equal(bobCreate.status, 200, await bobCreate.text());
+
+  // 4. Signed-in user can run real-time Top 10 query ordered by matchPoints DESC
+  const top10Res = await fetch(`${FIRESTORE_BASE}:runQuery`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${aliceToken}` },
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: 'tournament_leaderboard' }],
+        orderBy: [{ field: { fieldPath: 'matchPoints' }, direction: 'DESCENDING' }],
+        limit: 10,
+      },
+    }),
+  });
+  const top10Body = await top10Res.text();
+  assert.equal(top10Res.status, 200, top10Body);
+  const top10Rows = JSON.parse(top10Body);
+  const rankedNames = top10Rows
+    .filter((r) => r.document)
+    .map((r) => r.document.fields.displayName.stringValue);
+  assert.deepEqual(rankedNames, ['Bob Champion', 'Alice Pro']);
+
+  // 5. Alice can monotonically increment her own matchPoints within anti-cheat bounds
+  const aliceUpdate = await fetch(aliceUrl, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${aliceToken}` },
+    body: JSON.stringify({
+      fields: {
+        userId: { stringValue: 'alice_uid' },
+        displayName: { stringValue: 'Alice Pro' },
+        avatarId: { stringValue: 'avatar_monarch' },
+        matchPoints: { integerValue: '1200' },
+        matchesPlayed: { integerValue: '2' },
+        wins: { integerValue: '2' },
+        totalCoinsEarned: { doubleValue: 260.0 },
+        favoriteGame: { stringValue: 'FREE_FIRE' },
+        createdAt: { timestampValue: ts },
+        updatedAt: { timestampValue: isoPast(400) },
+      },
+    }),
+  });
+  assert.equal(aliceUpdate.status, 200, await aliceUpdate.text());
+
+  // 6. Anti-cheat: Alice cannot jump +99999 matchPoints in a single update
+  const aliceCheat = await fetch(aliceUrl, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${aliceToken}` },
+    body: JSON.stringify({
+      fields: {
+        userId: { stringValue: 'alice_uid' },
+        displayName: { stringValue: 'Alice Pro' },
+        avatarId: { stringValue: 'avatar_monarch' },
+        matchPoints: { integerValue: '999999' },
+        matchesPlayed: { integerValue: '3' },
+        wins: { integerValue: '3' },
+        totalCoinsEarned: { doubleValue: 300.0 },
+        favoriteGame: { stringValue: 'FREE_FIRE' },
+        createdAt: { timestampValue: ts },
+        updatedAt: { timestampValue: isoPast(200) },
+      },
+    }),
+  });
+  assert.equal(aliceCheat.status, 403);
+
+  // 7. Cross-user isolation: Alice cannot tamper with Bob's leaderboard entry
+  const aliceTamperBob = await fetch(bobUrl, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${aliceToken}` },
+    body: JSON.stringify({
+      fields: {
+        userId: { stringValue: 'bob_uid' },
+        displayName: { stringValue: 'Hacked Bob' },
+        avatarId: { stringValue: 'avatar_cyber' },
+        matchPoints: { integerValue: '1500' },
+        matchesPlayed: { integerValue: '3' },
+        wins: { integerValue: '2' },
+        totalCoinsEarned: { doubleValue: 350.0 },
+        favoriteGame: { stringValue: 'LUDO' },
+        createdAt: { timestampValue: ts },
+        updatedAt: { timestampValue: isoPast(200) },
+      },
+    }),
+  });
+  assert.equal(aliceTamperBob.status, 403);
+
+  // 8. Non-admin cannot delete leaderboard entries; Admin can delete
+  const aliceDelete = await fetch(aliceUrl, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${aliceToken}` },
+  });
+  assert.equal(aliceDelete.status, 403);
+
+  const adminDelete = await fetch(bobUrl, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${adminToken}` },
+  });
+  assert.equal(adminDelete.status, 200, await adminDelete.text());
+});
+
 
 

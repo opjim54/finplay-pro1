@@ -327,9 +327,10 @@ class FirestoreTournamentRepository(
     companion object {
         const val COLLECTION_TOURNAMENTS = "tournaments"
         const val SUBCOLLECTION_ENTRIES = "entries"
+        const val COLLECTION_TOURNAMENT_LEADERBOARD = "tournament_leaderboard"
 
         val ALLOWED_GAME_CATEGORIES = setOf(
-            "FREE_FIRE", "LUDO", "CHESS", "AETHER_CROWN", "REVERSI", "CONNECT_FOUR", "PUBG", "EFOOTBALL", "ESPORTS", "CARROM", "SNAKES_LADDERS", "FRUIT_SLASH"
+            "FREE_FIRE", "LUDO", "CHESS", "SHOLO_GUTI", "PUBG", "EFOOTBALL", "ESPORTS", "CARROM", "SNAKES_LADDERS", "FRUIT_SLASH", "WAR_LAND"
         )
 
         fun stableDocIdForLocal(localTournamentId: Long): String = "tour_local_${localTournamentId.coerceAtLeast(1L)}"
@@ -617,4 +618,101 @@ class FirestoreTournamentRepository(
             Result.failure(e)
         }
     }
+
+    /**
+     * Real-time Firestore query streaming the Top 10 Tournament Leaderboard players
+     * ordered by `matchPoints` descending from `/tournament_leaderboard`.
+     */
+    fun observeTop10Leaderboard(): Flow<List<TournamentLeaderboardEntry>> {
+        if (currentUserUid() == null) return flowOf(emptyList())
+        return firestoreProvider()
+            .collection(COLLECTION_TOURNAMENT_LEADERBOARD)
+            .orderBy("matchPoints", Query.Direction.DESCENDING)
+            .limit(10L)
+            .snapshots()
+            .map { snapshot ->
+                snapshot.documents.mapNotNull { doc ->
+                    TournamentLeaderboardEntry.fromSnapshot(doc)
+                }
+            }
+            .catch { cause ->
+                val firestoreErr = cause as? FirebaseFirestoreException
+                    ?: cause.cause as? FirebaseFirestoreException
+                if (cause is CancellationException && firestoreErr == null) throw cause
+                handleFirestoreError(
+                    firestoreErr ?: (cause as? Exception ?: RuntimeException(cause)),
+                    OperationType.LIST,
+                    COLLECTION_TOURNAMENT_LEADERBOARD
+                )
+                emit(emptyList())
+            }
+    }
+
+    /**
+     * Records competitive match points for the signed-in user in `/tournament_leaderboard/{uid}`.
+     * Safely enforces monotonic increments within `firestore.rules` anti-cheat caps (<= 5000 pts/update).
+     */
+    suspend fun recordLeaderboardMatchPoints(
+        displayName: String,
+        avatarId: String,
+        pointsEarned: Long,
+        isWin: Boolean,
+        coinsEarned: Double,
+        gameType: String
+    ): Result<TournamentLeaderboardEntry> = withContext(Dispatchers.IO) {
+        try {
+            val uid = currentUserUid() ?: return@withContext Result.failure(
+                IllegalStateException("Sign in with Google to sync Tournament Leaderboard points")
+            )
+            val safeDeltaPoints = pointsEarned.coerceIn(0L, 5000L)
+            val safeDeltaCoins = coinsEarned.coerceIn(0.0, 100_000.0)
+            val cleanName = displayName.trim().ifBlank { "FinPlay Warrior" }.take(64)
+            val cleanAvatar = avatarId.trim().ifBlank { "avatar_monarch" }.take(64)
+            val cleanGame = TournamentGameType.fromWire(gameType).wireValue
+
+            val docRef = firestoreProvider()
+                .collection(COLLECTION_TOURNAMENT_LEADERBOARD)
+                .document(uid)
+            val existing = docRef.get().await()
+
+            val resultEntry = if (existing.exists()) {
+                val prev = TournamentLeaderboardEntry.fromSnapshot(existing)
+                    ?: TournamentLeaderboardEntry(id = uid, userId = uid)
+                val updated = prev.copy(
+                    id = uid,
+                    userId = uid,
+                    displayName = cleanName,
+                    avatarId = cleanAvatar,
+                    matchPoints = (prev.matchPoints + safeDeltaPoints).coerceIn(0L, 10_000_000L),
+                    matchesPlayed = (prev.matchesPlayed + 1).coerceIn(1, 100_000),
+                    wins = (prev.wins + if (isWin) 1 else 0).coerceIn(0, (prev.matchesPlayed + 1).coerceIn(1, 100_000)),
+                    totalCoinsEarned = (prev.totalCoinsEarned + safeDeltaCoins).coerceIn(0.0, 100_000_000.0),
+                    favoriteGame = cleanGame
+                )
+                docRef.update(updated.toFirestoreUpdateMap()).await()
+                updated
+            } else {
+                val created = TournamentLeaderboardEntry(
+                    id = uid,
+                    userId = uid,
+                    displayName = cleanName,
+                    avatarId = cleanAvatar,
+                    matchPoints = safeDeltaPoints,
+                    matchesPlayed = 1,
+                    wins = if (isWin) 1 else 0,
+                    totalCoinsEarned = safeDeltaCoins,
+                    favoriteGame = cleanGame
+                )
+                docRef.set(created.toFirestoreCreateMap()).await()
+                created
+            }
+            Result.success(resultEntry)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, "$COLLECTION_TOURNAMENT_LEADERBOARD/${currentUserUid()}")
+            Result.failure(e)
+        }
+    }
 }
+

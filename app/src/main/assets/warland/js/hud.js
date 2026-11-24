@@ -13,11 +13,33 @@ class WarLandHud {
         this.aliveCount = 26;
         this.killCount = 0;
         this.isCustomizingHud = false;
+        this.keyboardSprintActive = false;
 
         this.initDomElements();
         this.bindTouchEvents();
         this.bindMouseControls();
         this.bindKeyboardFallback();
+    }
+
+    // Zero-lag tap binding for mobile + desktop: prevents touchstart+click double-fire AND stops cameraZone bleed
+    _bindTapButton(id, handler) {
+        const el = document.getElementById(id);
+        if (!el) return null;
+        let lastTouchTime = 0;
+
+        el.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            lastTouchTime = performance.now();
+            handler(e, el);
+        }, { passive: false });
+
+        el.addEventListener('click', (e) => {
+            if (performance.now() - lastTouchTime < 450) return;
+            e.stopPropagation();
+            handler(e, el);
+        });
+        return el;
     }
 
     initDomElements() {
@@ -145,66 +167,65 @@ class WarLandHud {
             });
         }
 
-        // 3. Fire Button
+        // 3. Fire Button (touchstart + stopPropagation so firing never rotates camera accidentally)
         const fireBtn = document.getElementById('btnFire');
         if (fireBtn) {
-            fireBtn.addEventListener('touchstart', (e) => { e.preventDefault(); this.isFiring = true; });
-            fireBtn.addEventListener('touchend', (e) => { e.preventDefault(); this.isFiring = false; });
-            fireBtn.addEventListener('mousedown', () => { this.isFiring = true; });
+            fireBtn.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); this.isFiring = true; }, { passive: false });
+            fireBtn.addEventListener('touchend', (e) => { e.preventDefault(); e.stopPropagation(); this.isFiring = false; }, { passive: false });
+            fireBtn.addEventListener('touchcancel', () => { this.isFiring = false; });
+            fireBtn.addEventListener('mousedown', (e) => { e.stopPropagation(); this.isFiring = true; });
             window.addEventListener('mouseup', () => { this.isFiring = false; });
         }
 
-        // 4. Action Mobility Buttons
-        document.getElementById('btnJump')?.addEventListener('click', () => {
+        // 4. Action Mobility & Combat Buttons (instant touch response, zero double-fire, zero camera bleed)
+        this._bindTapButton('btnJump', () => {
             if (window.player) window.player.jump();
         });
 
-        document.getElementById('btnCrouch')?.addEventListener('click', () => {
+        this._bindTapButton('btnCrouch', () => {
             if (!window.player) return;
             window.player.posture = (window.player.posture === 'CROUCH') ? 'STAND' : 'CROUCH';
+            document.getElementById('btnCrouch')?.classList.toggle('active', window.player.posture === 'CROUCH');
+            document.getElementById('btnProne')?.classList.remove('active');
         });
 
-        document.getElementById('btnProne')?.addEventListener('click', () => {
+        this._bindTapButton('btnProne', () => {
             if (!window.player) return;
             window.player.posture = (window.player.posture === 'PRONE') ? 'STAND' : 'PRONE';
+            document.getElementById('btnProne')?.classList.toggle('active', window.player.posture === 'PRONE');
+            document.getElementById('btnCrouch')?.classList.remove('active');
         });
 
-        const sprintBtn = document.getElementById('btnSprint');
-        if (sprintBtn) {
-            const toggleSprint = (e) => {
-                if (e) { e.preventDefault(); e.stopPropagation(); }
-                if (!window.player) return;
-                window.player.isSprinting = !window.player.isSprinting;
-                sprintBtn.classList.toggle('active', window.player.isSprinting);
-            };
-            sprintBtn.addEventListener('touchstart', toggleSprint, { passive: false });
-            sprintBtn.addEventListener('click', toggleSprint);
-        }
+        // Dedicated Run / Sprint Toggle Button
+        this._bindTapButton('btnSprint', (_e, sprintBtn) => {
+            if (!window.player) return;
+            window.player.isSprinting = !window.player.isSprinting;
+            if (window.player.isSprinting && window.player.posture !== 'STAND') {
+                window.player.posture = 'STAND';
+                document.getElementById('btnCrouch')?.classList.remove('active');
+                document.getElementById('btnProne')?.classList.remove('active');
+            }
+            sprintBtn.classList.toggle('active', window.player.isSprinting);
+        });
 
-        // Slide Button (Runs / Slides smoothly in real-time)
-        const slideBtn = document.getElementById('btnSlide');
-        if (slideBtn) {
-            const triggerSlide = (e) => {
-                if (e) { e.preventDefault(); e.stopPropagation(); }
-                if (window.player) window.player.startSlide();
-            };
-            slideBtn.addEventListener('touchstart', triggerSlide, { passive: false });
-            slideBtn.addEventListener('click', triggerSlide);
-        }
+        // Dedicated Tactical Slide Button
+        this._bindTapButton('btnSlide', () => {
+            if (window.player) window.player.startSlide();
+        });
 
-        document.getElementById('btnScope')?.addEventListener('click', () => {
+        this._bindTapButton('btnScope', () => {
             this.toggleScope();
         });
 
-        document.getElementById('btnReload')?.addEventListener('click', () => {
+        this._bindTapButton('btnReload', () => {
             if (window.inventory) window.inventory.startReload();
         });
 
-        document.getElementById('btnGrenade')?.addEventListener('click', () => {
+        this._bindTapButton('btnGrenade', () => {
             if (window.gameEngine) window.gameEngine.throwGrenade();
         });
 
-        document.getElementById('btnMedkit')?.addEventListener('click', () => {
+        this._bindTapButton('btnMedkit', () => {
             if (window.player) window.player.healMedkit();
         });
 
@@ -340,6 +361,46 @@ class WarLandHud {
             if (window.soundEngine) window.soundEngine.masterVolume = e.target.value / 100;
         });
 
+        // 7b. Master HUD Opacity Slider inside #settingsModal
+        const masterOpacitySlider = document.getElementById('hudMasterOpacitySlider');
+        const masterOpacityVal = document.getElementById('hudMasterOpacityVal');
+        const syncMasterOpacityUi = (pct) => {
+            const clampedPct = Math.max(15, Math.min(100, Math.round(pct)));
+            if (masterOpacitySlider) masterOpacitySlider.value = String(clampedPct);
+            if (masterOpacityVal) masterOpacityVal.textContent = `${clampedPct}%`;
+        };
+        if (window.hudCustomizer && typeof window.hudCustomizer.getMasterOpacity === 'function') {
+            syncMasterOpacityUi(window.hudCustomizer.getMasterOpacity() * 100);
+        }
+        masterOpacitySlider?.addEventListener('input', (e) => {
+            const pct = Number(e.target.value);
+            syncMasterOpacityUi(pct);
+            if (window.hudCustomizer && typeof window.hudCustomizer.setMasterOpacity === 'function') {
+                window.hudCustomizer.setMasterOpacity(pct / 100);
+            }
+        });
+
+        // 7c. Minimap Visibility Toggle Button on top of #minimapWrapper
+        const minimapWrapper = document.getElementById('minimapWrapper');
+        const btnToggleMinimap = document.getElementById('btnToggleMinimap');
+        const applyMinimapCollapsed = (collapsed) => {
+            if (!minimapWrapper || !btnToggleMinimap) return;
+            minimapWrapper.classList.toggle('minimap-collapsed', !!collapsed);
+            btnToggleMinimap.textContent = collapsed ? '🗺️ Map' : '🗺️ Hide';
+            btnToggleMinimap.setAttribute('aria-pressed', collapsed ? 'false' : 'true');
+            try {
+                localStorage.setItem('warland_minimap_collapsed', collapsed ? '1' : '0');
+            } catch (err) {}
+        };
+        try {
+            const savedCollapsed = localStorage.getItem('warland_minimap_collapsed') === '1';
+            applyMinimapCollapsed(savedCollapsed);
+        } catch (err) {}
+        this._bindTapButton('btnToggleMinimap', () => {
+            const isCurrentlyCollapsed = minimapWrapper?.classList.contains('minimap-collapsed');
+            applyMinimapCollapsed(!isCurrentlyCollapsed);
+        });
+
         // 8. Custom HUD Toggle
         document.getElementById('btnCustomizeHud')?.addEventListener('click', () => {
             if (window.hudCustomizer) {
@@ -350,7 +411,7 @@ class WarLandHud {
         });
 
         // 9. Free Fire Gloo Wall Deploy Button
-        document.getElementById('btnGlooWall')?.addEventListener('click', () => {
+        this._bindTapButton('btnGlooWall', () => {
             if (window.gameEngine) window.gameEngine.deployGlooWall();
         });
     }
@@ -489,9 +550,17 @@ class WarLandHud {
         }
 
         if (keys['shift']) {
-            if (window.player) window.player.isSprinting = true;
-        } else {
-            if (window.player) window.player.isSprinting = false;
+            this.keyboardSprintActive = true;
+            if (window.player) {
+                window.player.isSprinting = true;
+                document.getElementById('btnSprint')?.classList.add('active');
+            }
+        } else if (this.keyboardSprintActive) {
+            this.keyboardSprintActive = false;
+            if (window.player) {
+                window.player.isSprinting = false;
+                document.getElementById('btnSprint')?.classList.remove('active');
+            }
         }
 
         if (x !== 0 || y !== 0) {
@@ -686,20 +755,110 @@ class WarLandHud {
         }
     }
 
+    _spawnVictoryConfetti(container) {
+        if (!container) return;
+        container.innerHTML = '';
+        const palette = ['#FACC15', '#F59E0B', '#34D399', '#38BDF8', '#FB7185', '#FFFFFF'];
+        for (let i = 0; i < 28; i++) {
+            const piece = document.createElement('span');
+            piece.className = 'confetti-piece';
+            piece.style.left = `${4 + Math.random() * 92}%`;
+            piece.style.backgroundColor = palette[i % palette.length];
+            piece.style.setProperty('--dur', `${1.9 + Math.random() * 1.4}s`);
+            piece.style.setProperty('--delay', `${(Math.random() * 0.55).toFixed(2)}s`);
+            piece.style.setProperty('--drift', `${Math.round((Math.random() - 0.5) * 140)}px`);
+            container.appendChild(piece);
+        }
+    }
+
+    _animateCoinCount(targetCoins) {
+        const counterEl = document.getElementById('coinsWonCounter');
+        const badgeEl = document.getElementById('coinsWonBadge');
+        if (!counterEl || !badgeEl) return;
+
+        if (this._coinAnimFrame) {
+            cancelAnimationFrame(this._coinAnimFrame);
+            this._coinAnimFrame = null;
+        }
+
+        const safeTarget = Math.max(0, Math.round(Number(targetCoins) || 0));
+        counterEl.textContent = '0';
+        badgeEl.classList.remove('coin-landed');
+        badgeEl.classList.add('coin-counting');
+
+        const durationMs = Math.min(1800, Math.max(850, safeTarget * 16));
+        const startTime = performance.now();
+
+        const step = (now) => {
+            const elapsed = now - startTime;
+            const progress = Math.min(1, elapsed / durationMs);
+            // Smooth cubic ease-out
+            const eased = 1 - Math.pow(1 - progress, 3);
+            const currentVal = Math.round(safeTarget * eased);
+            counterEl.textContent = String(currentVal);
+
+            if (progress < 1) {
+                this._coinAnimFrame = requestAnimationFrame(step);
+            } else {
+                counterEl.textContent = String(safeTarget);
+                badgeEl.classList.remove('coin-counting');
+                badgeEl.classList.add('coin-landed');
+                this._coinAnimFrame = null;
+            }
+        };
+
+        this._coinAnimFrame = requestAnimationFrame(step);
+    }
+
     showMatchOverModal(isWinner, rank, kills) {
-        this.matchOverModal.classList.remove('hidden');
-        document.getElementById('matchOutcomeTitle').textContent = isWinner ? '🏆 BOOYAH! #1 CHAMPION' : `ELIMINATED (Rank #${rank})`;
-        document.getElementById('matchOutcomeDesc').textContent = `Total Kills: ${kills} • Mode: Battle Royale`;
+        const modal = this.matchOverModal;
+        if (!modal) return;
+
+        modal.classList.remove('hidden', 'outcome-victory', 'outcome-loss');
+        // Force reflow so CSS keyframe banner animations re-trigger cleanly
+        void modal.offsetWidth;
+        modal.classList.add(isWinner ? 'outcome-victory' : 'outcome-loss');
+
+        const emblemEl = document.getElementById('matchOutcomeEmblem');
+        const kickerEl = document.getElementById('matchOutcomeKicker');
+        const titleEl = document.getElementById('matchOutcomeTitle');
+        const descEl = document.getElementById('matchOutcomeDesc');
+        const statRankEl = document.getElementById('matchStatRank');
+        const statKillsEl = document.getElementById('matchStatKills');
+        const confettiLayer = document.getElementById('matchConfettiLayer');
+
+        if (emblemEl) emblemEl.textContent = isWinner ? '🏆' : '💀';
+        if (kickerEl) kickerEl.textContent = isWinner ? 'VICTORY' : 'DEFEAT';
+        if (titleEl) {
+            titleEl.textContent = isWinner
+                ? 'BOOYAH! #1 CHAMPION'
+                : `LOSS • ELIMINATED (#${rank})`;
+        }
+        if (descEl) {
+            descEl.textContent = isWinner
+                ? `Dominated WarLand with ${kills} eliminations!`
+                : `Finished Rank #${rank} with ${kills} eliminations • Try again!`;
+        }
+        if (statRankEl) statRankEl.textContent = `#${rank}`;
+        if (statKillsEl) statKillsEl.textContent = String(kills);
+
+        if (isWinner) {
+            this._spawnVictoryConfetti(confettiLayer);
+        } else if (confettiLayer) {
+            confettiLayer.innerHTML = '';
+        }
 
         const coinsEarned = (kills * 5) + (isWinner ? 50 : (rank <= 3 ? 30 : 5));
-        document.getElementById('coinsWonBadge').textContent = `+${coinsEarned} Game Coins Earned!`;
+        this._animateCoinCount(coinsEarned);
 
         if (isWinner && window.soundEngine) {
             window.soundEngine.playVictory();
         }
 
-        // Bridge to Android Kotlin if available
-        if (window.WarLandBridge && typeof window.WarLandBridge.onMatchCompleted === 'function') {
+        // Bridge to Android Kotlin WebView
+        if (typeof window.onMatchCompleted === 'function') {
+            window.onMatchCompleted(kills, rank, coinsEarned);
+        } else if (window.WarLandBridge && typeof window.WarLandBridge.onMatchCompleted === 'function') {
             window.WarLandBridge.onMatchCompleted(kills, rank, coinsEarned);
         }
     }

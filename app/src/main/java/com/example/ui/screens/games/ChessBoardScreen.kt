@@ -69,15 +69,18 @@ import kotlinx.coroutines.withContext
 
 @Composable
 fun ChessBoardScreen(
+    initialVsBot: Boolean = true,
+    initialBotAccuracy: Int = 70,
     onRecordMatch: (outcome: GameMatchResult, score: Int, vsBot: Boolean, botAccuracy: Int) -> Unit = { _, _, _, _ -> }
 ) {
     val appStrings = LocalStrings.current
     val gStrings by LanguageManager.gameStrings.collectAsStateWithLifecycle()
     val financeColors = LocalFinanceColors.current
 
-    var playVsBot by remember { mutableStateOf(true) }
-    var botAccuracy by remember { mutableIntStateOf(70) }
+    var playVsBot by remember { mutableStateOf(initialVsBot) }
+    var botAccuracy by remember { mutableIntStateOf(initialBotAccuracy) }
     var showRules by remember { mutableStateOf(false) }
+    var matchSessionId by remember { mutableIntStateOf(0) }
 
     var state by remember { mutableStateOf(ChessEngine.newGame()) }
     var selectedSquare by remember { mutableStateOf<Int?>(null) }
@@ -87,6 +90,8 @@ fun ChessBoardScreen(
     var lastEarnedScore by remember { mutableIntStateOf(0) }
 
     fun resetChess() {
+        matchSessionId++
+        botThinking = false
         selectedSquare = null
         pendingPromotionMoves = emptyList()
         resultRecorded = false
@@ -187,12 +192,25 @@ fun ChessBoardScreen(
     }
 
     val isBotTurn = playVsBot && state.outcome == ChessOutcome.ONGOING && state.turn == PieceColor.BLACK
-    LaunchedEffect(state.turn, state.outcome, playVsBot, botAccuracy) {
-        if (!isBotTurn) return@LaunchedEffect
+    LaunchedEffect(state.turn, state.outcome, playVsBot, botAccuracy, matchSessionId) {
+        if (!isBotTurn) {
+            botThinking = false
+            return@LaunchedEffect
+        }
+        val session = matchSessionId
         botThinking = true
         delay(240L)
+        if (session != matchSessionId) {
+            botThinking = false
+            return@LaunchedEffect
+        }
+        val snapshot = state
         val bestMove = withContext(Dispatchers.Default) {
-            ChessBotAi.chooseMove(state, botAccuracy)
+            ChessBotAi.chooseMove(snapshot, botAccuracy)
+        }
+        if (session != matchSessionId) {
+            botThinking = false
+            return@LaunchedEffect
         }
         if (bestMove != null) {
             playMoveWithSfx(state, bestMove)

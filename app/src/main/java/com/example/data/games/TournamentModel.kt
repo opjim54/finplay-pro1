@@ -17,15 +17,14 @@ enum class TournamentGameType(val wireValue: String, val displayName: String) {
     FREE_FIRE("FREE_FIRE", "Free Fire"),
     LUDO("LUDO", "Ludo"),
     CHESS("CHESS", "Chess"),
-    AETHER_CROWN("AETHER_CROWN", "Aether Crown"),
-    REVERSI("REVERSI", "Reversi"),
-    CONNECT_FOUR("CONNECT_FOUR", "Connect 4"),
     PUBG("PUBG", "PUBG Mobile"),
     EFOOTBALL("EFOOTBALL", "eFootball"),
     ESPORTS("ESPORTS", "Esports"),
     CARROM("CARROM", "Carrom 3D"),
+    SHOLO_GUTI("SHOLO_GUTI", "Sholo Guti (16 Beads)"),
     SNAKES_LADDERS("SNAKES_LADDERS", "Snakes & Ladders 3D"),
-    FRUIT_SLASH("FRUIT_SLASH", "Fruit Slash 3D");
+    FRUIT_SLASH("FRUIT_SLASH", "Fruit Slash 3D"),
+    WAR_LAND("WAR_LAND", "WarLand 3D");
 
     companion object {
         val ALLOWED_WIRE_VALUES: Set<String> = entries.map { it.wireValue }.toSet()
@@ -293,4 +292,213 @@ data class Tournament(
             )
         }
     }
+
+    /**
+     * Calculates entry fee vs. potential earnings, net profit, and ROI for a participant.
+     */
+    fun calculatePotentialEarnings(expectedKills: Int = 0): TournamentEarningsEstimate =
+        TournamentEarningsCalculator.calculateEntryVsPotentialEarnings(
+            entryFee = entryFee,
+            prizePool = prizePool,
+            maxSlots = maxSlots,
+            adminCommissionPercent = adminCommissionPercent,
+            perKillReward = perKillReward,
+            prizeRanksJson = prizeRanksJson,
+            expectedKills = expectedKills
+        )
 }
+
+/**
+ * Breakdown of a tournament participant's entry fee against potential earnings and ROI.
+ */
+@Keep
+data class TournamentEarningsEstimate(
+    val entryFee: Double,
+    val grossPrizePool: Double,
+    val platformCommissionAmount: Double,
+    val netDistributablePool: Double,
+    val firstPlacePrize: Double,
+    val secondPlacePrize: Double,
+    val thirdPlacePrize: Double,
+    val killBonusEstimate: Double,
+    val totalPotentialFirstPlaceEarnings: Double,
+    val potentialNetProfit: Double,
+    val roiPercent: Double,
+    val returnMultiplier: Double,
+    val breakEvenKills: Int,
+    val isFreeEntry: Boolean
+) {
+    val isPositiveReturn: Boolean
+        get() = potentialNetProfit > 0.0 || (isFreeEntry && totalPotentialFirstPlaceEarnings > 0.0)
+}
+
+/**
+ * Helper utility calculating tournament entry fees against potential participant earnings,
+ * supporting both explicit `prizePool` values, rank payout JSON (`prizeRanksJson`),
+ * per-kill rewards, and dynamic gross-pool fallback when prizePool is auto-derived.
+ */
+object TournamentEarningsCalculator {
+
+    fun calculateEntryVsPotentialEarnings(
+        entryFee: Double,
+        prizePool: Double,
+        maxSlots: Int = 48,
+        adminCommissionPercent: Double = 10.0,
+        perKillReward: Double = 0.0,
+        prizeRanksJson: String = "[]",
+        expectedKills: Int = 0
+    ): TournamentEarningsEstimate {
+        val safeEntryFee = entryFee.coerceAtLeast(0.0)
+        val safeSlots = maxSlots.coerceIn(2, 500)
+        val safeCommissionPct = adminCommissionPercent.coerceIn(0.0, 100.0)
+        val safePerKill = perKillReward.coerceAtLeast(0.0)
+        val safeKills = expectedKills.coerceAtLeast(0)
+
+        val projectedGrossPool = safeEntryFee * safeSlots
+        val explicitPool = prizePool.coerceAtLeast(0.0)
+        val grossPool = if (explicitPool > 0.0) explicitPool else projectedGrossPool
+        val commissionAmount = if (explicitPool > 0.0) {
+            (projectedGrossPool * (safeCommissionPct / 100.0)).coerceAtLeast(0.0)
+        } else {
+            grossPool * (safeCommissionPct / 100.0)
+        }
+        val netPool = if (explicitPool > 0.0) {
+            explicitPool
+        } else {
+            (grossPool - commissionAmount).coerceAtLeast(0.0)
+        }
+
+        val parsedRanks = com.example.domain.games.TournamentPrizeCodec.parseRanks(prizeRanksJson)
+        val firstPrize: Double
+        val secondPrize: Double
+        val thirdPrize: Double
+        if (parsedRanks.isNotEmpty()) {
+            firstPrize = parsedRanks.getOrNull(0)?.amount?.coerceAtLeast(0.0) ?: netPool
+            secondPrize = parsedRanks.getOrNull(1)?.amount?.coerceAtLeast(0.0) ?: 0.0
+            thirdPrize = parsedRanks.getOrNull(2)?.amount?.coerceAtLeast(0.0) ?: 0.0
+        } else if (safeSlots <= 2) {
+            firstPrize = netPool
+            secondPrize = 0.0
+            thirdPrize = 0.0
+        } else if (safeSlots <= 5) {
+            firstPrize = netPool * 0.65
+            secondPrize = netPool * 0.35
+            thirdPrize = 0.0
+        } else {
+            firstPrize = netPool * 0.50
+            secondPrize = netPool * 0.30
+            thirdPrize = netPool * 0.20
+        }
+
+        val killBonus = safePerKill * safeKills
+        val totalPotentialFirst = firstPrize + killBonus
+        val netProfit = totalPotentialFirst - safeEntryFee
+        val isFree = safeEntryFee <= 0.0
+        val roiPct = if (isFree) {
+            if (totalPotentialFirst > 0.0) 100.0 else 0.0
+        } else {
+            (netProfit / safeEntryFee) * 100.0
+        }
+        val multiplier = if (isFree) {
+            if (totalPotentialFirst > 0.0) totalPotentialFirst else 0.0
+        } else {
+            totalPotentialFirst / safeEntryFee
+        }
+        val breakEvenKills = if (!isFree && safePerKill > 0.0) {
+            kotlin.math.ceil(safeEntryFee / safePerKill).toInt().coerceAtLeast(1)
+        } else {
+            0
+        }
+
+        return TournamentEarningsEstimate(
+            entryFee = safeEntryFee,
+            grossPrizePool = grossPool,
+            platformCommissionAmount = commissionAmount,
+            netDistributablePool = netPool,
+            firstPlacePrize = firstPrize,
+            secondPlacePrize = secondPrize,
+            thirdPlacePrize = thirdPrize,
+            killBonusEstimate = killBonus,
+            totalPotentialFirstPlaceEarnings = totalPotentialFirst,
+            potentialNetProfit = netProfit,
+            roiPercent = roiPct,
+            returnMultiplier = multiplier,
+            breakEvenKills = breakEvenKills,
+            isFreeEntry = isFree
+        )
+    }
+}
+
+/**
+ * Real-time Firestore Tournament Leaderboard entry stored at `/tournament_leaderboard/{userId}`.
+ * Queried via `orderBy("matchPoints", Query.Direction.DESCENDING).limit(10)` for the Top 10 rankings.
+ */
+@Keep
+@IgnoreExtraProperties
+data class TournamentLeaderboardEntry(
+    @DocumentId
+    val id: String = "",
+    val userId: String = "",
+    val displayName: String = "",
+    val avatarId: String = "avatar_monarch",
+    val matchPoints: Long = 0L,
+    val matchesPlayed: Int = 0,
+    val wins: Int = 0,
+    val totalCoinsEarned: Double = 0.0,
+    val favoriteGame: String = "WAR_LAND",
+    val createdAt: Timestamp? = null,
+    val updatedAt: Timestamp? = null
+) {
+    @get:Exclude
+    val winRatePercent: Int
+        get() = if (matchesPlayed <= 0) 0 else ((wins * 100.0) / matchesPlayed).toInt().coerceIn(0, 100)
+
+    fun toFirestoreCreateMap(): Map<String, Any> = mapOf(
+        "userId" to userId.trim().take(128),
+        "displayName" to displayName.trim().ifBlank { "FinPlay Warrior" }.take(64),
+        "avatarId" to avatarId.trim().ifBlank { "avatar_monarch" }.take(64),
+        "matchPoints" to matchPoints.coerceIn(0L, 5000L),
+        "matchesPlayed" to matchesPlayed.coerceIn(0, 5),
+        "wins" to wins.coerceIn(0, matchesPlayed.coerceIn(0, 5)),
+        "totalCoinsEarned" to totalCoinsEarned.coerceIn(0.0, 100_000.0),
+        "favoriteGame" to favoriteGame.trim().ifBlank { "WAR_LAND" }.take(48),
+        "createdAt" to FieldValue.serverTimestamp(),
+        "updatedAt" to FieldValue.serverTimestamp()
+    )
+
+    fun toFirestoreUpdateMap(): Map<String, Any> {
+        val safeMatches = matchesPlayed.coerceIn(0, 100_000)
+        return mapOf(
+            "displayName" to displayName.trim().ifBlank { "FinPlay Warrior" }.take(64),
+            "avatarId" to avatarId.trim().ifBlank { "avatar_monarch" }.take(64),
+            "matchPoints" to matchPoints.coerceIn(0L, 10_000_000L),
+            "matchesPlayed" to safeMatches,
+            "wins" to wins.coerceIn(0, safeMatches),
+            "totalCoinsEarned" to totalCoinsEarned.coerceIn(0.0, 100_000_000.0),
+            "favoriteGame" to favoriteGame.trim().ifBlank { "WAR_LAND" }.take(48),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+    }
+
+    companion object {
+        fun fromSnapshot(doc: DocumentSnapshot): TournamentLeaderboardEntry? {
+            if (!doc.exists()) return null
+            val uid = doc.getString("userId")?.takeIf { it.isNotBlank() } ?: doc.id
+            val est = DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+            return TournamentLeaderboardEntry(
+                id = doc.id,
+                userId = uid,
+                displayName = doc.getString("displayName")?.takeIf { it.isNotBlank() } ?: "Player",
+                avatarId = doc.getString("avatarId")?.takeIf { it.isNotBlank() } ?: "avatar_monarch",
+                matchPoints = (doc.get("matchPoints") as? Number)?.toLong()?.coerceAtLeast(0L) ?: 0L,
+                matchesPlayed = (doc.get("matchesPlayed") as? Number)?.toInt()?.coerceAtLeast(0) ?: 0,
+                wins = (doc.get("wins") as? Number)?.toInt()?.coerceAtLeast(0) ?: 0,
+                totalCoinsEarned = (doc.get("totalCoinsEarned") as? Number)?.toDouble()?.coerceAtLeast(0.0) ?: 0.0,
+                favoriteGame = doc.getString("favoriteGame")?.takeIf { it.isNotBlank() } ?: "WAR_LAND",
+                createdAt = doc.getTimestamp("createdAt", est),
+                updatedAt = doc.getTimestamp("updatedAt", est)
+            )
+        }
+    }
+}
+

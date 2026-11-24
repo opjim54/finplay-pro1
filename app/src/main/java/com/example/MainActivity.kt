@@ -238,6 +238,7 @@ private fun SmartFinanceRoot(
     val activeOnlineRoom by playEarnVm.activeRoom.collectAsStateWithLifecycle()
     val recentOnlineRooms by playEarnVm.recentOnlineRooms.collectAsStateWithLifecycle()
     val selectedEntryFee by playEarnVm.selectedEntryFee.collectAsStateWithLifecycle()
+    val tournamentLeaderboard by playEarnVm.tournamentLeaderboard.collectAsStateWithLifecycle()
     val lastSettlement by playEarnVm.lastSettlement.collectAsStateWithLifecycle()
     val playFeedback by playEarnVm.feedbackMessage.collectAsStateWithLifecycle()
     val isOnlineBusy by playEarnVm.isBusy.collectAsStateWithLifecycle()
@@ -508,6 +509,7 @@ private fun SmartFinanceRoot(
             allExternalEntries = allExternalEntries,
             joinedCloudEntries = joinedCloudEntries,
             inspectedCloudRoster = inspectedCloudRoster,
+            tournamentLeaderboard = tournamentLeaderboard,
             currentUserId = prefs.currentUserId,
             broadcastNotifications = broadcastNotifications,
             liveSeatStatuses = liveSeatStatuses,
@@ -546,6 +548,10 @@ private fun SmartFinanceRoot(
             onSubmitOnlineMove = playEarnVm::submitOnlineMove,
             onLeaveOnlineRoom = playEarnVm::leaveOrForfeitActiveRoom,
             onRecordMatch = mainVm::recordGameMatch,
+            onAwardMatchCoins = playEarnVm::awardMatchCompletionCoins,
+            onRecordLeaderboardPoints = { gid, outcome, score ->
+                playEarnVm.recordCloudLeaderboardPoints(gid, outcome, score)
+            },
             onResetLeaderboard = mainVm::resetGameLeaderboard,
             onBack = { showGamesArena = false }
         )

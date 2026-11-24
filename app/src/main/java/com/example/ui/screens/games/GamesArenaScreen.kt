@@ -18,6 +18,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -53,14 +54,17 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.GridOn
+import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -71,8 +75,11 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -84,6 +91,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -95,7 +103,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.games.CloudTournamentDoc
 import com.example.data.games.CloudTournamentEntryDoc
@@ -104,6 +112,7 @@ import com.example.data.games.CloudWalletSummaryDoc
 import com.example.data.games.FirestoreMultiplayerRepository
 import com.example.data.games.MultiplayerRoomDoc
 import com.example.data.games.TournamentHubItem
+import com.example.data.games.TournamentLeaderboardEntry
 import com.example.data.games.TournamentSettlementReceipt
 import com.example.data.local.BroadcastNotificationEntity
 import com.example.data.local.ExternalTournamentEntity
@@ -129,21 +138,44 @@ import com.example.ui.viewmodel.MatchmakingScanState
 import com.example.ui.viewmodel.OnlineAuthProfile
 import kotlin.math.roundToInt
 
+// ============================================================================
+// TWO SIGNATURE LUXURY COLOR COMBINATIONS FOR GAME ARENA & ALL GAMES:
+// Palette 1 (Game Arena Shell & VIP Play & Earn): Obsidian Midnight + Royal Champagne Gold
+// Palette 2 (All Games Showcase & Active Play):   Deep Royal Emerald + Luminous Mint Pearl
+// ============================================================================
+private val ArenaObsidianBg = Color(0xFF090E1A)
+private val ArenaObsidianSurface = Color(0xFF101829)
+private val ArenaObsidianCard = Color(0xFF141F35)
+private val ArenaChampagneGold = Color(0xFFF5C451)
+private val ArenaRoyalGold = Color(0xFFD49B27)
+private val ArenaEmeraldDeep = Color(0xFF042F2E)
+private val ArenaEmeraldRich = Color(0xFF065F46)
+private val ArenaMintGlow = Color(0xFF10B981)
+private val ArenaMintSoft = Color(0xFF6EE7B7)
+private val ArenaIvoryText = Color(0xFFF8FAFC)
+private val ArenaMutedSlate = Color(0xFF94A3B8)
+
+private enum class AllGamesCategory { ALL, BOARD, STRATEGY, ACTION }
+
+private fun gameCategoryOf(game: ArenaGameId): AllGamesCategory = when (game) {
+    ArenaGameId.LUDO, ArenaGameId.SNAKES_LADDERS, ArenaGameId.CARROM -> AllGamesCategory.BOARD
+    ArenaGameId.SHOLO_GUTI, ArenaGameId.CHESS -> AllGamesCategory.STRATEGY
+    ArenaGameId.WAR_LAND, ArenaGameId.FRUIT_SLASH -> AllGamesCategory.ACTION
+}
+
 private data class ArenaGameVisuals(
     val icon: ImageVector,
     val gradient: List<Color>
 )
 
 private fun visualsFor(game: ArenaGameId): ArenaGameVisuals = when (game) {
-    ArenaGameId.LUDO -> ArenaGameVisuals(Icons.Default.Casino, listOf(Color(0xFF065F46), Color(0xFF059669)))
-    ArenaGameId.CHESS -> ArenaGameVisuals(Icons.Default.GridOn, listOf(Color(0xFF1E293B), Color(0xFF0F766E)))
-    ArenaGameId.AETHER_CROWN -> ArenaGameVisuals(Icons.Default.AutoAwesome, listOf(Color(0xFF312E81), Color(0xFF6D28D9)))
-    ArenaGameId.REVERSI -> ArenaGameVisuals(Icons.Default.Apps, listOf(Color(0xFF047857), Color(0xFF115E59)))
-    ArenaGameId.CONNECT_FOUR -> ArenaGameVisuals(Icons.Default.ViewColumn, listOf(Color(0xFF9F1239), Color(0xFFD97706)))
-    ArenaGameId.WAR_LAND -> ArenaGameVisuals(Icons.Default.SportsEsports, listOf(Color(0xFFB45309), Color(0xFFD97706)))
-    ArenaGameId.CARROM -> ArenaGameVisuals(Icons.Default.SportsEsports, listOf(Color(0xFF78350F), Color(0xFFD97706)))
-    ArenaGameId.SNAKES_LADDERS -> ArenaGameVisuals(Icons.Default.Casino, listOf(Color(0xFF065F46), Color(0xFF10B981)))
-    ArenaGameId.FRUIT_SLASH -> ArenaGameVisuals(Icons.Default.SportsEsports, listOf(Color(0xFFE11D48), Color(0xFFF59E0B)))
+    ArenaGameId.LUDO -> ArenaGameVisuals(Icons.Default.Casino, listOf(ArenaEmeraldDeep, ArenaMintGlow))
+    ArenaGameId.SNAKES_LADDERS -> ArenaGameVisuals(Icons.Default.Casino, listOf(ArenaEmeraldDeep, ArenaMintGlow))
+    ArenaGameId.CARROM -> ArenaGameVisuals(Icons.Default.SportsEsports, listOf(ArenaEmeraldDeep, ArenaRoyalGold))
+    ArenaGameId.SHOLO_GUTI -> ArenaGameVisuals(Icons.Default.GridOn, listOf(ArenaObsidianSurface, ArenaChampagneGold))
+    ArenaGameId.CHESS -> ArenaGameVisuals(Icons.Default.GridOn, listOf(ArenaObsidianCard, ArenaRoyalGold))
+    ArenaGameId.FRUIT_SLASH -> ArenaGameVisuals(Icons.Default.SportsEsports, listOf(ArenaEmeraldRich, ArenaChampagneGold))
+    ArenaGameId.WAR_LAND -> ArenaGameVisuals(Icons.Default.SportsEsports, listOf(ArenaObsidianSurface, ArenaRoyalGold))
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
@@ -164,6 +196,7 @@ fun GamesArenaScreen(
     allExternalEntries: List<ExternalTournamentEntryEntity> = emptyList(),
     joinedCloudEntries: Map<String, CloudTournamentEntryDoc> = emptyMap(),
     inspectedCloudRoster: List<CloudTournamentEntryDoc> = emptyList(),
+    tournamentLeaderboard: List<TournamentLeaderboardEntry> = emptyList(),
     currentUserId: Long = 0L,
     broadcastNotifications: List<BroadcastNotificationEntity> = emptyList(),
     liveSeatStatuses: Map<String, FirestoreMultiplayerRepository.LiveGameSeatStatus> = emptyMap(),
@@ -202,6 +235,8 @@ fun GamesArenaScreen(
     onSubmitOnlineMove: (String, String, String, Int, String, String, Boolean) -> Unit = { _, _, _, _, _, _, _ -> },
     onLeaveOnlineRoom: () -> Unit = {},
     onRecordMatch: (gameId: String, outcome: GameMatchResult, score: Int, vsBot: Boolean, botAccuracy: Int) -> Unit = { _, _, _, _, _ -> },
+    onAwardMatchCoins: (gameId: String, outcome: GameMatchResult, isOnlineOrFriend: Boolean) -> Unit = { _, _, _ -> },
+    onRecordLeaderboardPoints: (gameId: String, outcome: GameMatchResult, score: Int) -> Unit = { _, _, _ -> },
     onResetLeaderboard: () -> Unit = {},
     onBack: () -> Unit
 ) {
@@ -216,10 +251,13 @@ fun GamesArenaScreen(
     val financeColors = LocalFinanceColors.current
     val soundEnabled by GameSoundEngine.soundEnabled.collectAsStateWithLifecycle()
 
-    var selectedHubTab by remember { mutableIntStateOf(0) } // 0 = Arena, 1 = Esports (FF), 2 = Wallets, 3 = Armory
+    var selectedHubTab by remember { mutableIntStateOf(0) } // 0 = Arena, 1 = Live Hub, 2 = Wallets, 3 = Armory
+    var selectedGameCategory by remember { mutableStateOf(AllGamesCategory.ALL) }
     var activeGame by remember { mutableStateOf<ArenaGameId?>(null) }
     var activeMatchFee by remember { mutableDoubleStateOf(0.0) }
     var activeMatchWinPrize by remember { mutableDoubleStateOf(0.0) }
+    var activeMatchVsBot by remember { mutableStateOf(true) }
+    var activeMatchBotAccuracy by remember { mutableIntStateOf(75) }
     var tierPickerGame by remember { mutableStateOf<ArenaGameId?>(null) }
     var previewRulesGame by remember { mutableStateOf<ArenaGameId?>(null) }
     var showLeaderboardSheet by remember { mutableStateOf(false) }
@@ -274,20 +312,25 @@ fun GamesArenaScreen(
             game = g,
             gStrings = gStrings,
             tournamentTiers = tournamentTiers,
-            userWalletBalance = playWallet.gameBalanceCoins,
+            userWalletBalance = playWallet.gameBalance,
             onDismiss = { tierPickerGame = null },
             onLaunchGame = { mode, botAcc, fee, prize, roomCode ->
                 tierPickerGame = null
+                val configuredBotAcc = gameBotConfigs[g.name]?.botAccuracyPercent ?: botAcc
                 when (mode) {
                     GameLaunchMode.OFFLINE -> {
                         activeMatchFee = 0.0
                         activeMatchWinPrize = 0.0
+                        activeMatchVsBot = false
+                        activeMatchBotAccuracy = botAcc
                         activeSkillTip = null
                         activeGame = g
                     }
                     GameLaunchMode.BOT -> {
                         activeMatchFee = 0.0
                         activeMatchWinPrize = 0.0
+                        activeMatchVsBot = true
+                        activeMatchBotAccuracy = botAcc
                         activeSkillTip = null
                         activeGame = g
                     }
@@ -306,6 +349,8 @@ fun GamesArenaScreen(
                         onEnterTournamentMatch(g.name, fee) {
                             activeMatchFee = fee
                             activeMatchWinPrize = prize
+                            activeMatchVsBot = true
+                            activeMatchBotAccuracy = configuredBotAcc
                             activeSkillTip = null
                             activeGame = g
                         }
@@ -318,16 +363,83 @@ fun GamesArenaScreen(
     MatchmakingScanDialog(
         scanState = matchmakingScanState,
         isBn = gStrings.isBn,
+        onlineAuth = onlineAuth,
+        avatarGlyph = avatarGlyph,
         onCancel = onClearScanState
     )
+
+    // Fullscreen Edge-to-Edge WebGL bypass for 3D action titles (War Land & Fruit Slash)
+    val fullscreenGame = activeGame
+    if (activeOnlineRoom == null && (fullscreenGame == ArenaGameId.WAR_LAND || fullscreenGame == ArenaGameId.FRUIT_SLASH)) {
+        val settleWebGl: (GameMatchResult, Int, Boolean, Int) -> Unit = { outcome, score, vsBot, acc ->
+            onRecordMatch(fullscreenGame.name, outcome, score, vsBot, acc)
+            if (activeMatchFee > 0.0) {
+                val feeToSettle = activeMatchFee
+                val prizeToSettle = activeMatchWinPrize.takeIf { it > 0.0 }
+                activeMatchFee = 0.0
+                activeMatchWinPrize = 0.0
+                onSettleTournamentMatch(fullscreenGame.name, feeToSettle, outcome, prizeToSettle)
+            } else {
+                onAwardMatchCoins(fullscreenGame.name, outcome, false)
+                onRecordLeaderboardPoints(fullscreenGame.name, outcome, score)
+            }
+        }
+        val ownedItems = remember(playWallet.ownedItemsCsv) { PlayArmoryCatalog.ownedItemSet(playWallet) }
+        val equippedCharSkin = remember(ownedItems) {
+            PlayArmoryCatalog.items
+                .firstOrNull { it.category == com.example.domain.games.ArmoryItemCategory.WAR_CHARACTER && it.id in ownedItems }
+                ?.id ?: "war_char_commando"
+        }
+        val equippedGunSkin = remember(ownedItems) {
+            PlayArmoryCatalog.items
+                .firstOrNull { it.category == com.example.domain.games.ArmoryItemCategory.WAR_WEAPON_SKIN && it.id in ownedItems }
+                ?.id ?: "war_gun_dragon_ak"
+        }
+        Box(modifier = Modifier.fillMaxSize().background(ArenaObsidianBg)) {
+            if (fullscreenGame == ArenaGameId.WAR_LAND) {
+                WarLandScreen(
+                    playerDisplayName = onlineAuth?.displayName ?: "Warrior_Pro",
+                    equippedCharSkin = equippedCharSkin,
+                    equippedGunSkin = equippedGunSkin,
+                    mode = if (activeMatchFee > 0.0) "TOURNAMENT" else if (activeMatchVsBot) "BOT" else "CLASSIC",
+                    onRecordMatch = settleWebGl,
+                    onExit = {
+                        activeGame = null
+                        activeMatchFee = 0.0
+                        activeMatchWinPrize = 0.0
+                    }
+                )
+            } else {
+                FruitSlashScreen(
+                    mode = if (activeMatchVsBot) "bot" else "classic",
+                    botAccuracy = activeMatchBotAccuracy,
+                    onRecordMatch = settleWebGl,
+                    onExit = {
+                        activeGame = null
+                        activeMatchFee = 0.0
+                        activeMatchWinPrize = 0.0
+                    }
+                )
+            }
+        }
+        return
+    }
 
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
+            .background(ArenaObsidianBg)
             .safeDrawingPadding(),
+        containerColor = ArenaObsidianBg,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = ArenaObsidianBg,
+                    titleContentColor = ArenaIvoryText,
+                    navigationIconContentColor = ArenaChampagneGold,
+                    actionIconContentColor = ArenaChampagneGold
+                ),
                 title = {
                     Column {
                         Text(
@@ -494,7 +606,12 @@ fun GamesArenaScreen(
                                 GameMatchResult.LOSS -> 35
                             }
                             onRecordMatch(gId, outcome, score, false, 100)
-                            if (fee > 0.0) onSettleTournamentMatch(gId, fee, outcome, null)
+                            if (fee > 0.0) {
+                                onSettleTournamentMatch(gId, fee, outcome, null)
+                            } else {
+                                onAwardMatchCoins(gId, outcome, true)
+                                onRecordLeaderboardPoints(gId, outcome, score)
+                            }
                         },
                         onLeaveOrForfeit = onLeaveOnlineRoom
                     )
@@ -527,36 +644,71 @@ fun GamesArenaScreen(
                 ) { current ->
                     when (current) {
                         null -> {
-                            Column(modifier = Modifier.fillMaxSize()) {
-                                TabRow(selectedTabIndex = selectedHubTab) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(ArenaObsidianBg, Color(0xFF07171B), ArenaObsidianBg)
+                                        )
+                                    )
+                            ) {
+                                // Luxury Obsidian & Champagne Gold Tab Bar
+                                TabRow(
+                                    selectedTabIndex = selectedHubTab,
+                                    containerColor = ArenaObsidianSurface,
+                                    contentColor = ArenaChampagneGold,
+                                    indicator = { tabPositions ->
+                                        if (selectedHubTab < tabPositions.size) {
+                                            TabRowDefaults.SecondaryIndicator(
+                                                modifier = Modifier.tabIndicatorOffset(tabPositions[selectedHubTab]),
+                                                height = 3.dp,
+                                                color = ArenaChampagneGold
+                                            )
+                                        }
+                                    }
+                                ) {
                                     Tab(
                                         selected = selectedHubTab == 0,
                                         onClick = { selectedHubTab = 0 },
-                                        text = { Text(gStrings.tabArena, maxLines = 1) },
+                                        selectedContentColor = ArenaChampagneGold,
+                                        unselectedContentColor = ArenaMutedSlate,
+                                        text = { Text(gStrings.tabArena, maxLines = 1, fontWeight = if (selectedHubTab == 0) FontWeight.ExtraBold else FontWeight.Medium) },
                                         icon = { Icon(Icons.Default.SportsEsports, contentDescription = null, modifier = Modifier.size(18.dp)) },
                                         modifier = Modifier.testTag("play_tab_arena")
                                     )
                                     Tab(
                                         selected = selectedHubTab == 1,
                                         onClick = { selectedHubTab = 1 },
-                                        text = { Text(if (gStrings.isBn) "লাইভ হাব" else "Live Hub", maxLines = 1) },
+                                        selectedContentColor = ArenaChampagneGold,
+                                        unselectedContentColor = ArenaMutedSlate,
+                                        text = { Text(if (gStrings.isBn) "ফ্রি ফায়ার" else "Free Fire", maxLines = 1, fontWeight = if (selectedHubTab == 1) FontWeight.ExtraBold else FontWeight.Medium) },
                                         icon = { Icon(Icons.Default.LocalFireDepartment, contentDescription = null, modifier = Modifier.size(18.dp)) },
                                         modifier = Modifier.testTag("play_tab_esports")
                                     )
                                     Tab(
                                         selected = selectedHubTab == 2,
                                         onClick = { selectedHubTab = 2 },
-                                        text = { Text(gStrings.tabWallets, maxLines = 1) },
+                                        selectedContentColor = ArenaChampagneGold,
+                                        unselectedContentColor = ArenaMutedSlate,
+                                        text = { Text(gStrings.tabWallets, maxLines = 1, fontWeight = if (selectedHubTab == 2) FontWeight.ExtraBold else FontWeight.Medium) },
                                         icon = { Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, modifier = Modifier.size(18.dp)) },
                                         modifier = Modifier.testTag("play_tab_wallets")
                                     )
                                     Tab(
                                         selected = selectedHubTab == 3,
                                         onClick = { selectedHubTab = 3 },
-                                        text = { Text(gStrings.tabArmory, maxLines = 1) },
+                                        selectedContentColor = ArenaChampagneGold,
+                                        unselectedContentColor = ArenaMutedSlate,
+                                        text = { Text(gStrings.tabArmory, maxLines = 1, fontWeight = if (selectedHubTab == 3) FontWeight.ExtraBold else FontWeight.Medium) },
                                         icon = { Icon(Icons.Default.ShoppingBag, contentDescription = null, modifier = Modifier.size(18.dp)) },
                                         modifier = Modifier.testTag("play_tab_armory")
                                     )
+                                }
+
+                                val filteredArenaGames = remember(selectedGameCategory) {
+                                    if (selectedGameCategory == AllGamesCategory.ALL) ArenaGameId.entries
+                                    else ArenaGameId.entries.filter { gameCategoryOf(it) == selectedGameCategory }
                                 }
 
                                 when (selectedHubTab) {
@@ -570,35 +722,82 @@ fun GamesArenaScreen(
                                                 LatestBroadcastBanner(broadcast = latestBroadcast)
                                             }
                                         }
+
+                                        // ---- GAME ARENA VIP HERO (PALETTE 1: OBSIDIAN MIDNIGHT + ROYAL CHAMPAGNE GOLD) ----
                                         item(key = "arena_hero") {
                                             Surface(
-                                                shape = RoundedCornerShape(22.dp),
-                                                border = BorderStroke(1.dp, skinPalette.accentBorder.copy(alpha = 0.65f)),
-                                                modifier = Modifier.fillMaxWidth()
+                                                shape = RoundedCornerShape(24.dp),
+                                                color = Color.Transparent,
+                                                border = BorderStroke(
+                                                    width = 1.5.dp,
+                                                    brush = Brush.linearGradient(
+                                                        listOf(ArenaChampagneGold, ArenaMintGlow.copy(alpha = 0.7f), ArenaRoyalGold)
+                                                    )
+                                                ),
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .shadow(14.dp, RoundedCornerShape(24.dp))
+                                                    .clip(RoundedCornerShape(24.dp))
                                             ) {
-                                                Column(
+                                                Box(
                                                     modifier = Modifier
+                                                        .fillMaxWidth()
                                                         .background(
                                                             Brush.linearGradient(
-                                                                listOf(skinPalette.frameStart, skinPalette.frameEnd, Color(0xFF312E81))
+                                                                listOf(ArenaObsidianCard, ArenaEmeraldDeep, Color(0xFF1A1407))
                                                             )
                                                         )
-                                                        .padding(18.dp),
-                                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                                        .padding(18.dp)
                                                 ) {
-                                                    Text(
-                                                        text = "$avatarGlyph ${gStrings.arenaBannerTitle}",
-                                                        style = MaterialTheme.typography.titleLarge.copy(
-                                                            fontFamily = FontFamily.Serif,
-                                                            fontWeight = FontWeight.Bold
-                                                        ),
-                                                        color = Color.White
-                                                    )
-                                                    Text(
-                                                        text = gStrings.arenaBannerDesc,
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        color = Color(0xFFD1FAE5)
-                                                    )
+                                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Surface(
+                                                                shape = RoundedCornerShape(50),
+                                                                color = ArenaChampagneGold.copy(alpha = 0.18f),
+                                                                border = BorderStroke(1.dp, ArenaChampagneGold.copy(alpha = 0.65f))
+                                                            ) {
+                                                                Text(
+                                                                    text = if (gStrings.isBn) "✦ প্রিমিয়াম গেম এরিনা" else "✦ PREMIUM GAME ARENA",
+                                                                    color = ArenaChampagneGold,
+                                                                    fontSize = 10.sp,
+                                                                    fontWeight = FontWeight.Black,
+                                                                    letterSpacing = 0.8.sp,
+                                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                                                )
+                                                            }
+                                                            Surface(
+                                                                shape = RoundedCornerShape(50),
+                                                                color = ArenaMintGlow.copy(alpha = 0.18f),
+                                                                border = BorderStroke(1.dp, ArenaMintGlow.copy(alpha = 0.55f))
+                                                            ) {
+                                                                Text(
+                                                                    text = if (gStrings.isBn) "🟢 ৭টি ৩D গেম লাইভ" else "🟢 7 PRO 3D GAMES",
+                                                                    color = ArenaMintSoft,
+                                                                    fontSize = 10.sp,
+                                                                    fontWeight = FontWeight.ExtraBold,
+                                                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                                                                )
+                                                            }
+                                                        }
+
+                                                        Text(
+                                                            text = "$avatarGlyph ${gStrings.arenaBannerTitle}",
+                                                            style = MaterialTheme.typography.titleLarge.copy(
+                                                                fontFamily = FontFamily.Serif,
+                                                                fontWeight = FontWeight.ExtraBold
+                                                            ),
+                                                            color = ArenaIvoryText
+                                                        )
+                                                        Text(
+                                                            text = gStrings.arenaBannerDesc,
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = Color(0xFFD1FAE5)
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
@@ -611,23 +810,36 @@ fun GamesArenaScreen(
                                             )
                                         }
 
-                                        // Tournament Entry Tier Selector
+                                        // Play & Earn Entry Fee Quick Strip (Obsidian + Champagne Gold)
                                         item(key = "tournament_tier_selector") {
                                             Surface(
-                                                shape = RoundedCornerShape(18.dp),
-                                                color = MaterialTheme.colorScheme.surface,
-                                                border = BorderStroke(1.dp, financeColors.champagneGold.copy(alpha = 0.45f)),
+                                                shape = RoundedCornerShape(20.dp),
+                                                color = ArenaObsidianSurface,
+                                                border = BorderStroke(1.2.dp, ArenaChampagneGold.copy(alpha = 0.45f)),
                                                 modifier = Modifier.fillMaxWidth()
                                             ) {
                                                 Column(
-                                                    modifier = Modifier.padding(12.dp),
-                                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                                    modifier = Modifier.padding(14.dp),
+                                                    verticalArrangement = Arrangement.spacedBy(8.dp)
                                                 ) {
-                                                    Text(
-                                                        text = gStrings.tournamentEntryLabel,
-                                                        style = MaterialTheme.typography.labelLarge,
-                                                        fontWeight = FontWeight.Bold
-                                                    )
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Text(
+                                                            text = if (gStrings.isBn) "🏆 Play & Earn এন্ট্রি ফি স্লট" else "🏆 Play & Earn Entry Slots",
+                                                            style = MaterialTheme.typography.labelLarge,
+                                                            fontWeight = FontWeight.ExtraBold,
+                                                            color = ArenaChampagneGold
+                                                        )
+                                                        Text(
+                                                            text = if (gStrings.isBn) "১০০% ক্যাশব্যাক" else "100% Cashback",
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = ArenaMintSoft
+                                                        )
+                                                    }
                                                     Row(
                                                         modifier = Modifier
                                                             .fillMaxWidth()
@@ -635,13 +847,29 @@ fun GamesArenaScreen(
                                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                                     ) {
                                                         PlayArmoryCatalog.TOURNAMENT_ENTRY_TIERS.forEach { tier ->
+                                                            val selected = selectedEntryFee == tier
                                                             FilterChip(
-                                                                selected = selectedEntryFee == tier,
-                                                                onClick = { onSelectTournamentFee(tier) },
+                                                                selected = selected,
+                                                                onClick = {
+                                                                    GameSoundEngine.play(GameSoundEffect.TAP)
+                                                                    onSelectTournamentFee(tier)
+                                                                },
+                                                                colors = FilterChipDefaults.filterChipColors(
+                                                                    containerColor = ArenaObsidianCard,
+                                                                    labelColor = ArenaIvoryText,
+                                                                    selectedContainerColor = ArenaChampagneGold,
+                                                                    selectedLabelColor = ArenaObsidianBg
+                                                                ),
+                                                                border = FilterChipDefaults.filterChipBorder(
+                                                                    enabled = true,
+                                                                    selected = selected,
+                                                                    borderColor = ArenaChampagneGold.copy(alpha = 0.35f),
+                                                                    selectedBorderColor = ArenaChampagneGold
+                                                                ),
                                                                 label = {
                                                                     Text(
                                                                         text = if (tier == 0.0) gStrings.freePlayLabel else "৳${tier.toInt()}",
-                                                                        fontWeight = FontWeight.Bold
+                                                                        fontWeight = FontWeight.ExtraBold
                                                                     )
                                                                 },
                                                                 modifier = Modifier.testTag("tournament_fee_chip_${tier.toInt()}")
@@ -651,7 +879,7 @@ fun GamesArenaScreen(
                                                     Text(
                                                         text = gStrings.lossCashbackBanner,
                                                         style = MaterialTheme.typography.labelSmall,
-                                                        color = Color(0xFF059669),
+                                                        color = ArenaMintSoft,
                                                         fontWeight = FontWeight.SemiBold
                                                     )
                                                 }
@@ -687,7 +915,104 @@ fun GamesArenaScreen(
                                             )
                                         }
 
-                                        items(ArenaGameId.entries, key = { it.name }) { game ->
+                                        // ---- ALL GAMES SECTION HEADER (PALETTE 2: DEEP ROYAL EMERALD + LUMINOUS MINT) ----
+                                        item(key = "all_games_premium_header") {
+                                            Surface(
+                                                shape = RoundedCornerShape(20.dp),
+                                                color = Color.Transparent,
+                                                border = BorderStroke(1.2.dp, ArenaMintGlow.copy(alpha = 0.55f)),
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clip(RoundedCornerShape(20.dp))
+                                                    .background(
+                                                        Brush.horizontalGradient(
+                                                            listOf(ArenaEmeraldDeep, Color(0xFF0A2A2D), ArenaObsidianCard)
+                                                        )
+                                                    )
+                                            ) {
+                                                Column(
+                                                    modifier = Modifier.padding(14.dp),
+                                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                                ) {
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Column {
+                                                            Text(
+                                                                text = if (gStrings.isBn) "✦ সব গেম (ALL GAMES)" else "✦ ALL GAMES",
+                                                                style = MaterialTheme.typography.titleMedium.copy(
+                                                                    fontFamily = FontFamily.Serif,
+                                                                    fontWeight = FontWeight.ExtraBold
+                                                                ),
+                                                                color = ArenaIvoryText
+                                                            )
+                                                            Text(
+                                                                text = if (gStrings.isBn) "যেকোনো গেমে ট্যাপ করলেই Play & Earn স্লট ওপেন হবে"
+                                                                else "Tap any game to open Play & Earn slots & pro modes",
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                color = ArenaMintSoft
+                                                            )
+                                                        }
+                                                        Surface(
+                                                            shape = RoundedCornerShape(50),
+                                                            color = ArenaChampagneGold.copy(alpha = 0.18f),
+                                                            border = BorderStroke(1.dp, ArenaChampagneGold.copy(alpha = 0.6f))
+                                                        ) {
+                                                            Text(
+                                                                text = "${filteredArenaGames.size}/${ArenaGameId.entries.size}",
+                                                                color = ArenaChampagneGold,
+                                                                fontWeight = FontWeight.Black,
+                                                                fontSize = 11.sp,
+                                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                                            )
+                                                        }
+                                                    }
+
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .horizontalScroll(rememberScrollState()),
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                    ) {
+                                                        listOf(
+                                                            AllGamesCategory.ALL to (if (gStrings.isBn) "সব (৭)" else "All (7)"),
+                                                            AllGamesCategory.BOARD to (if (gStrings.isBn) "বোর্ড গেম" else "Board"),
+                                                            AllGamesCategory.STRATEGY to (if (gStrings.isBn) "স্ট্র্যাটেজি" else "Strategy"),
+                                                            AllGamesCategory.ACTION to (if (gStrings.isBn) "আর্কেড ও অ্যাকশন" else "Action & Arcade")
+                                                        ).forEach { (cat, label) ->
+                                                            val selected = selectedGameCategory == cat
+                                                            FilterChip(
+                                                                selected = selected,
+                                                                onClick = {
+                                                                    GameSoundEngine.play(GameSoundEffect.TAP)
+                                                                    selectedGameCategory = cat
+                                                                },
+                                                                colors = FilterChipDefaults.filterChipColors(
+                                                                    containerColor = ArenaObsidianBg.copy(alpha = 0.65f),
+                                                                    labelColor = ArenaMintSoft,
+                                                                    selectedContainerColor = ArenaMintGlow,
+                                                                    selectedLabelColor = ArenaObsidianBg
+                                                                ),
+                                                                border = FilterChipDefaults.filterChipBorder(
+                                                                    enabled = true,
+                                                                    selected = selected,
+                                                                    borderColor = ArenaMintGlow.copy(alpha = 0.35f),
+                                                                    selectedBorderColor = ArenaMintGlow
+                                                                ),
+                                                                label = {
+                                                                    Text(label, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                                                },
+                                                                modifier = Modifier.testTag("all_games_filter_${cat.name.lowercase()}")
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        items(filteredArenaGames, key = { it.name }) { game ->
                                             val seatStatus = liveSeatStatuses[game.name]
                                             ArenaGameMenuCard(
                                                 game = game,
@@ -719,6 +1044,7 @@ fun GamesArenaScreen(
                                         allLocalEntries = allExternalEntries,
                                         joinedCloudEntries = joinedCloudEntries,
                                         inspectedCloudRoster = inspectedCloudRoster,
+                                        tournamentLeaderboard = tournamentLeaderboard,
                                         onlineAuth = onlineAuth,
                                         currentUserId = currentUserId,
                                         wallet = playWallet,
@@ -821,24 +1147,42 @@ fun GamesArenaScreen(
                                             activeMatchFee = 0.0
                                             activeMatchWinPrize = 0.0
                                             onSettleTournamentMatch(current.name, feeToSettle, outcome, prizeToSettle)
+                                        } else {
+                                            onAwardMatchCoins(current.name, outcome, false)
+                                            onRecordLeaderboardPoints(current.name, outcome, score)
                                         }
                                     }
 
                                     when (current) {
-                                        ArenaGameId.LUDO -> LudoBoardScreen(onRecordMatch = settleAndRecord)
-                                        ArenaGameId.CHESS -> ChessBoardScreen(onRecordMatch = settleAndRecord)
-                                        ArenaGameId.AETHER_CROWN -> AetherCrownScreen(onRecordMatch = settleAndRecord)
-                                        ArenaGameId.REVERSI -> ReversiBoardScreen(onRecordMatch = settleAndRecord)
-                                        ArenaGameId.CONNECT_FOUR -> ConnectFourScreen(onRecordMatch = settleAndRecord)
-                                        ArenaGameId.WAR_LAND -> WarLandScreen(
+                                        ArenaGameId.LUDO -> LudoBoardScreen(
+                                            initialVsBot = activeMatchVsBot,
+                                            initialBotAccuracy = activeMatchBotAccuracy,
+                                            onRecordMatch = settleAndRecord
+                                        )
+                                        ArenaGameId.SNAKES_LADDERS -> SnakesLaddersScreen(
+                                            initialVsBot = activeMatchVsBot,
+                                            initialBotAccuracy = activeMatchBotAccuracy,
                                             onRecordMatch = settleAndRecord,
                                             onExit = { activeGame = null }
                                         )
                                         ArenaGameId.CARROM -> CarromBoardScreen(
+                                            initialVsBot = activeMatchVsBot,
+                                            initialBotAccuracy = activeMatchBotAccuracy,
                                             onRecordMatch = settleAndRecord,
                                             onExit = { activeGame = null }
                                         )
-                                        ArenaGameId.SNAKES_LADDERS -> SnakesLaddersScreen(
+                                        ArenaGameId.SHOLO_GUTI -> SholoGutiBoardScreen(
+                                            initialVsBot = activeMatchVsBot,
+                                            initialBotAccuracy = activeMatchBotAccuracy,
+                                            onRecordMatch = settleAndRecord,
+                                            onExit = { activeGame = null }
+                                        )
+                                        ArenaGameId.CHESS -> ChessBoardScreen(
+                                            initialVsBot = activeMatchVsBot,
+                                            initialBotAccuracy = activeMatchBotAccuracy,
+                                            onRecordMatch = settleAndRecord
+                                        )
+                                        ArenaGameId.WAR_LAND -> WarLandScreen(
                                             onRecordMatch = settleAndRecord,
                                             onExit = { activeGame = null }
                                         )
@@ -885,9 +1229,15 @@ private fun ArenaGameMenuCard(
 
     with(sharedTransitionScope) {
         Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, financeColors.cardBorder),
+            shape = RoundedCornerShape(22.dp),
+            color = ArenaObsidianCard,
+            border = BorderStroke(
+                width = 1.2.dp,
+                brush = Brush.linearGradient(
+                    listOf(ArenaChampagneGold.copy(alpha = 0.55f), ArenaMintGlow.copy(alpha = 0.45f))
+                )
+            ),
+            shadowElevation = 8.dp,
             modifier = Modifier
                 .fillMaxWidth()
                 .graphicsLayer { scaleX = cardScale; scaleY = cardScale }
@@ -901,7 +1251,7 @@ private fun ArenaGameMenuCard(
                         )
                     }
                 )
-                .clip(RoundedCornerShape(20.dp))
+                .clip(RoundedCornerShape(22.dp))
                 .clickable(
                     interactionSource = interactionSource,
                     indication = null,
@@ -909,177 +1259,226 @@ private fun ArenaGameMenuCard(
                 )
                 .testTag("game_card_${game.name.lowercase()}")
         ) {
-            Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                // Professional 3D Game Banner Artwork
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // Full-Bleed 3D Game Banner with Overlaid Photorealistic 3D Game Icon & Live Status
                 val bannerRes = gStrings.bannerResFor(game)
-                if (bannerRes != null) {
+                val iconRes = gStrings.iconResFor(game)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(164.dp)
+                ) {
+                    Image(
+                        painter = painterResource(bannerRes),
+                        contentDescription = gStrings.gameTitle(game),
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+
+                    // Rich Obsidian-Emerald Vignette for crisp legibility
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(136.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                    ) {
-                        Image(
-                            painter = painterResource(bannerRes),
-                            contentDescription = gStrings.gameTitle(game),
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                        // Depth overlay
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(
-                                    Brush.verticalGradient(
-                                        listOf(Color.Transparent, Color(0xFF0F172A).copy(alpha = 0.55f))
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colorStops = arrayOf(
+                                        0.0f to ArenaObsidianBg.copy(alpha = 0.18f),
+                                        0.48f to ArenaObsidianBg.copy(alpha = 0.42f),
+                                        1.0f to ArenaObsidianCard.copy(alpha = 0.98f)
                                     )
                                 )
+                            )
+                    )
+
+                    // Top-Left Live Seats Glass Pill
+                    seatStatus?.let { status ->
+                        val isBusy = status.isServerBusy
+                        val pillColor = if (isBusy || !status.multiplayerEnabled) Color(0xFFEF4444) else ArenaMintGlow
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = ArenaObsidianBg.copy(alpha = 0.78f),
+                            border = BorderStroke(1.dp, pillColor.copy(alpha = 0.65f)),
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(10.dp)
+                        ) {
+                            Text(
+                                text = if (!status.multiplayerEnabled) "🔴 Paused"
+                                else if (isBusy) "🔴 Busy (${status.waitingRoomsCount}/${status.maxConcurrentSeats})"
+                                else "🟢 ${status.openSeats} Seats Open",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = if (isBusy || !status.multiplayerEnabled) Color(0xFFFCA5A5) else ArenaMintSoft,
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    // Top-Right Champagne Gold Game Badge
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = ArenaObsidianBg.copy(alpha = 0.80f),
+                        border = BorderStroke(1.dp, ArenaChampagneGold.copy(alpha = 0.75f)),
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(10.dp)
+                    ) {
+                        Text(
+                            text = gStrings.gameBadge(game),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Black,
+                            color = ArenaChampagneGold,
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
                         )
                     }
-                }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
+                    // Bottom Overlay: Realistic 3D Game Icon Squircle + Serif Title + Subtitle
+                    Row(
                         modifier = Modifier
-                            .size(54.dp)
-                            .sharedElement(
-                                state = rememberSharedContentState(key = "game_icon_${game.name}"),
-                                animatedVisibilityScope = animatedVisibilityScope,
-                                boundsTransform = { _, _ ->
-                                    spring(
-                                        dampingRatio = Spring.DampingRatioLowBouncy,
-                                        stiffness = Spring.StiffnessMediumLow
-                                    )
-                                }
-                            )
-                            .clip(CircleShape)
-                            .background(Brush.linearGradient(visuals.gradient)),
-                        contentAlignment = Alignment.Center
+                            .align(Alignment.BottomStart)
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Icon(visuals.icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(26.dp))
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        // Photorealistic 3D Game Icon Medallion
+                        Box(
+                            modifier = Modifier
+                                .size(62.dp)
+                                .sharedElement(
+                                    state = rememberSharedContentState(key = "game_icon_${game.name}"),
+                                    animatedVisibilityScope = animatedVisibilityScope,
+                                    boundsTransform = { _, _ ->
+                                        spring(
+                                            dampingRatio = Spring.DampingRatioLowBouncy,
+                                            stiffness = Spring.StiffnessMediumLow
+                                        )
+                                    }
+                                )
+                                .shadow(12.dp, RoundedCornerShape(16.dp))
+                                .clip(RoundedCornerShape(16.dp))
+                                .border(
+                                    width = 2.dp,
+                                    brush = Brush.linearGradient(
+                                        listOf(ArenaChampagneGold, ArenaMintGlow, ArenaRoyalGold)
+                                    ),
+                                    shape = RoundedCornerShape(16.dp)
+                                )
                         ) {
+                            Image(
+                                painter = painterResource(iconRes),
+                                contentDescription = "${gStrings.gameTitle(game)} Icon",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(
                                 text = gStrings.gameTitle(game),
                                 style = MaterialTheme.typography.titleMedium.copy(
                                     fontFamily = FontFamily.Serif,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.ExtraBold
                                 ),
-                                modifier = Modifier
-                                    .weight(1f, fill = false)
-                                    .sharedBounds(
-                                        sharedContentState = rememberSharedContentState(key = "game_title_${game.name}"),
-                                        animatedVisibilityScope = animatedVisibilityScope
-                                    )
+                                color = ArenaIvoryText,
+                                maxLines = 1,
+                                modifier = Modifier.sharedBounds(
+                                    sharedContentState = rememberSharedContentState(key = "game_title_${game.name}"),
+                                    animatedVisibilityScope = animatedVisibilityScope
+                                )
                             )
-                            Surface(
-                                shape = RoundedCornerShape(50),
-                                color = financeColors.champagneGold.copy(alpha = 0.18f)
-                            ) {
-                                Text(
-                                    text = gStrings.gameBadge(game),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = financeColors.champagneGold,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                        Text(
-                            text = gStrings.gameSubtitle(game),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        if (stats != null && stats.gamesPlayed > 0) {
-                            Spacer(Modifier.height(4.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(
-                                    text = "🏆 ${stats.highScore} pts",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = financeColors.champagneGold
-                                )
-                                Text(
-                                    text = "• ${stats.winRatePercent().roundToInt()}% ${gStrings.winRateLabel}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color(0xFF10B981)
-                                )
-                            }
-                        }
-
-                        seatStatus?.let { status ->
-                            Spacer(Modifier.height(6.dp))
-                            val isBusy = status.isServerBusy
-                            val pillColor = if (isBusy) Color(0xFFEF4444) else Color(0xFF10B981)
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Surface(
-                                    shape = RoundedCornerShape(50),
-                                    color = pillColor.copy(alpha = 0.14f),
-                                    border = BorderStroke(1.dp, pillColor.copy(alpha = 0.45f))
-                                ) {
-                                    Text(
-                                        text = if (!status.multiplayerEnabled) "🔴 Online Paused"
-                                        else if (isBusy) "🔴 Server Busy (${status.waitingRoomsCount}/${status.maxConcurrentSeats})"
-                                        else "🟢 Seats Open (${status.openSeats}/${status.maxConcurrentSeats})",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = pillColor,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                    )
-                                }
-                                if (status.waitingPlayerNames.isNotEmpty() && !isBusy) {
-                                    Text(
-                                        text = "Live: ${status.waitingPlayerNames.take(2).joinToString(", ")}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1
-                                    )
-                                }
-                            }
+                            Text(
+                                text = gStrings.gameSubtitle(game),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFFCBD5E1),
+                                maxLines = 2
+                            )
                         }
                     }
                 }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // Bottom Action & Stats Strip
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Button(
-                        onClick = onPlay,
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("play_${game.name.lowercase()}_btn")
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            text = if (selectedEntryFee > 0.0) "${gStrings.playNow} (৳${selectedEntryFee.toInt()})"
-                            else gStrings.playNow
-                        )
+                    if ((stats != null && stats.gamesPlayed > 0) || (seatStatus != null && seatStatus.waitingPlayerNames.isNotEmpty() && !seatStatus.isServerBusy)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (stats != null && stats.gamesPlayed > 0) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(
+                                        text = "🏆 ${stats.highScore} pts",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = ArenaChampagneGold
+                                    )
+                                    Text(
+                                        text = "• ${stats.winRatePercent().roundToInt()}% ${gStrings.winRateLabel}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = ArenaMintSoft
+                                    )
+                                }
+                            }
+                            if (seatStatus != null && seatStatus.waitingPlayerNames.isNotEmpty() && !seatStatus.isServerBusy) {
+                                Text(
+                                    text = "Live: ${seatStatus.waitingPlayerNames.take(2).joinToString(", ")}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = ArenaMutedSlate,
+                                    maxLines = 1
+                                )
+                            }
+                        }
                     }
-                    OutlinedButton(
-                        onClick = onRules,
-                        modifier = Modifier.testTag("rules_${game.name.lowercase()}_btn")
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text(gStrings.rules)
+                        Button(
+                            onClick = onPlay,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = ArenaChampagneGold,
+                                contentColor = ArenaObsidianBg
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(42.dp)
+                                .testTag("play_${game.name.lowercase()}_btn")
+                        ) {
+                            Icon(Icons.Default.EmojiEvents, contentDescription = null, modifier = Modifier.size(17.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = if (selectedEntryFee > 0.0) {
+                                    if (gStrings.isBn) "Play & Earn (৳${selectedEntryFee.toInt()})" else "Play & Earn (৳${selectedEntryFee.toInt()})"
+                                } else {
+                                    if (gStrings.isBn) "Play & Earn / খেলুন" else "Play & Earn"
+                                },
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 13.sp,
+                                maxLines = 1
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = onRules,
+                            border = BorderStroke(1.dp, ArenaMintGlow.copy(alpha = 0.55f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = ArenaMintSoft),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .height(42.dp)
+                                .testTag("rules_${game.name.lowercase()}_btn")
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(gStrings.rules, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
                     }
                 }
             }
@@ -1101,11 +1500,10 @@ private fun ActiveGameHeroHeader(
     onUseSkill: (String, String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val visuals = visualsFor(game)
+    val iconRes = gStrings.iconResFor(game)
     val recommendedSkillId = when (game) {
-        ArenaGameId.CHESS, ArenaGameId.REVERSI, ArenaGameId.CONNECT_FOUR -> PlayArmoryCatalog.SKILL_CHESS_HINT
+        ArenaGameId.CHESS, ArenaGameId.SHOLO_GUTI -> PlayArmoryCatalog.SKILL_CHESS_HINT
         ArenaGameId.LUDO, ArenaGameId.SNAKES_LADDERS -> PlayArmoryCatalog.SKILL_LUDO_REROLL
-        ArenaGameId.AETHER_CROWN -> PlayArmoryCatalog.SKILL_FLUX_CHARGE
         ArenaGameId.WAR_LAND, ArenaGameId.CARROM, ArenaGameId.FRUIT_SLASH -> PlayArmoryCatalog.SKILL_UNDO_PASS
     }
     val recommendedSkill = PlayArmoryCatalog.itemById(recommendedSkillId)
@@ -1114,8 +1512,8 @@ private fun ActiveGameHeroHeader(
     with(sharedTransitionScope) {
         Surface(
             shape = RoundedCornerShape(18.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.2.dp, skinPalette.accentBorder.copy(alpha = 0.7f)),
+            color = ArenaObsidianCard,
+            border = BorderStroke(1.2.dp, ArenaChampagneGold.copy(alpha = 0.65f)),
             modifier = modifier
                 .fillMaxWidth()
                 .sharedBounds(
@@ -1140,7 +1538,7 @@ private fun ActiveGameHeroHeader(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(40.dp)
                             .sharedElement(
                                 state = rememberSharedContentState(key = "game_icon_${game.name}"),
                                 animatedVisibilityScope = animatedVisibilityScope,
@@ -1151,11 +1549,15 @@ private fun ActiveGameHeroHeader(
                                     )
                                 }
                             )
-                            .clip(CircleShape)
-                            .background(Brush.linearGradient(visuals.gradient)),
-                        contentAlignment = Alignment.Center
+                            .clip(RoundedCornerShape(12.dp))
+                            .border(1.5.dp, ArenaChampagneGold, RoundedCornerShape(12.dp))
                     ) {
-                        Icon(visuals.icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(19.dp))
+                        Image(
+                            painter = painterResource(iconRes),
+                            contentDescription = gStrings.gameTitle(game),
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
                     }
                     Spacer(Modifier.width(10.dp))
                     Column {
@@ -1165,6 +1567,7 @@ private fun ActiveGameHeroHeader(
                                 fontFamily = FontFamily.Serif,
                                 fontWeight = FontWeight.Bold
                             ),
+                            color = ArenaIvoryText,
                             modifier = Modifier.sharedBounds(
                                 sharedContentState = rememberSharedContentState(key = "game_title_${game.name}"),
                                 animatedVisibilityScope = animatedVisibilityScope
@@ -1172,13 +1575,13 @@ private fun ActiveGameHeroHeader(
                         )
                         Text(
                             text = when {
-                                entryFee > 0.0 -> "🏆 ৳${entryFee.toInt()} Tournament (100% Cashback)"
+                                entryFee > 0.0 -> "🏆 ৳${entryFee.toInt()} Play & Earn (100% Cashback)"
                                 stats != null && stats.gamesPlayed > 0 ->
                                     "${gStrings.highScoreLabel}: ${stats.highScore} • ${gStrings.winRateLabel}: ${stats.winRatePercent().roundToInt()}%"
                                 else -> gStrings.gameBadge(game)
                             },
                             style = MaterialTheme.typography.labelSmall,
-                            color = skinPalette.accentBorder
+                            color = ArenaChampagneGold
                         )
                     }
                 }
@@ -1194,11 +1597,15 @@ private fun ActiveGameHeroHeader(
                             }
                             onUseSkill(recommendedSkill.id, tip)
                         },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = ArenaMintGlow,
+                            selectedLabelColor = ArenaObsidianBg
+                        ),
                         label = {
                             Text(
                                 text = "${recommendedSkill.iconGlyph} x$chargeCount",
                                 style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.ExtraBold
                             )
                         },
                         modifier = Modifier.testTag("active_game_use_skill_chip")

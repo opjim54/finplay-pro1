@@ -18,13 +18,29 @@ class GameEngine {
         const urlParams = new URLSearchParams(window.location.search);
         this.gameMode = urlParams.get('mode') || window.gameMode || 'PRACTICE';
         this.isZoneActive = (this.gameMode === 'TOURNAMENT' || this.gameMode === 'FRIENDS' || this.gameMode === 'CUSTOM');
-        this.safeZoneRadius = 360;
+        this.safeZoneRadius = 520;
         this.safeZoneCenter = new THREE.Vector2(0, 0);
-        this.safeZoneShrinkSpeed = 0.8; // meters per second
+        this.safeZoneShrinkSpeed = 0.85; // meters per second
 
         // Free Fire Gloo Wall Deployable Shield System
         this.glooWalls = [];
         this.playerGlooWallCount = 3;
+
+        // Shared Particle / Tracer Resources (eliminates WebGL GPU buffer & shader leaks!)
+        this._sharedSparkGeom = new THREE.SphereGeometry(0.06, 4, 4);
+        this._sharedDebrisGeom = new THREE.SphereGeometry(0.35, 6, 6);
+        this._sharedFireballGeom = new THREE.SphereGeometry(1.2, 14, 14);
+        this._sharedRingGeom = new THREE.RingGeometry(0.6, 1.4, 28);
+        this._sharedColorMats = new Map();
+        this._sharedTracerMats = new Map();
+
+        window.onWarLandLoadProgress = (done, total) => {
+            const pct = Math.min(100, Math.round((done / Math.max(1, total)) * 100));
+            const fill = document.getElementById('wlLoadBarFill');
+            const st = document.getElementById('wlLoadStatus');
+            if (fill) fill.style.width = `${Math.max(8, pct)}%`;
+            if (st) st.textContent = `Deploying island & 3D assets... ${pct}%`;
+        };
 
         this.initThree();
         if (window.blenderAssetLoader) {
@@ -167,12 +183,27 @@ class GameEngine {
 
         // 9. Battle Royale Airplane Airdrop System
         this.initAirdropPlane();
+
+        // 10. Apply deferred Android Bridge profile & Armory skins once player is built
+        if (window.warLandBridge && typeof window.setPlayerData === 'function') {
+            window.setPlayerData(
+                window.warLandBridge.playerName,
+                window.warLandBridge.userProfilePic,
+                window.warLandBridge.equippedSkin,
+                window.warLandBridge.equippedGunSkin
+            );
+        }
+        const overlay = document.getElementById('loadingOverlay');
+        if (overlay) {
+            overlay.classList.add('hidden');
+            setTimeout(() => overlay.remove(), 450);
+        }
     }
 
     initAirdropPlane() {
-        this.planeStart = new THREE.Vector3(-360, 190, -360);
-        this.planeEnd = new THREE.Vector3(360, 190, 360);
-        this.planeFlightDuration = 28.0;
+        this.planeStart = new THREE.Vector3(-480, 195, -480);
+        this.planeEnd = new THREE.Vector3(480, 195, 480);
+        this.planeFlightDuration = 34.0;
         this.planeTimer = 0;
         this.isPlaneActive = true;
 
@@ -253,61 +284,65 @@ class GameEngine {
     }
 
     spawnInitialLoot() {
-        // Spawn Ground Weapons & Medkits across building floors, courtyards, and rooftops
+        // Spawn Ground Weapons, Armor & Medkits across all 520m districts & enterable interiors/rooftops
         const lootSpawns = [
-            // Interior Villa & Townhouse Loot (Ground, 2nd floor, and rooftops!)
-            { t: 'GUN_AK47', p: new THREE.Vector3(28, 4.2, -32) },    // Villa 2nd floor!
-            { t: 'GUN_AWM', p: new THREE.Vector3(28, 8.0, -32) },     // Villa Rooftop!
-            { t: 'MEDKIT', p: new THREE.Vector3(26, 0.4, -30) },      // Villa Living room
-            { t: 'ARMOR', p: new THREE.Vector3(-32, 4.2, -45) },      // Townhouse 2nd floor
-            { t: 'GUN_DEAGLE', p: new THREE.Vector3(-32, 8.0, -45) }, // Townhouse 3rd floor
-            { t: 'GUN_SPAS12', p: new THREE.Vector3(-32, 11.8, -45) },// Townhouse Rooftop
-            { t: 'AMMO', p: new THREE.Vector3(-65, 4.2, -75) },
-            { t: 'GUN_AK47', p: new THREE.Vector3(-85, 0.4, -55) },
-            { t: 'MEDKIT', p: new THREE.Vector3(120, 0.4, -80) },     // Inside Hangar
-            { t: 'GUN_AWM', p: new THREE.Vector3(120, 8.8, -80) },     // Hangar roof
+            // Central Crossroads Enterable Villa (38, -38) & Townhouse (-42, -44)
+            { t: 'GUN_AK47',   p: new THREE.Vector3(38, 4.2, -38) },     // Villa 2nd floor
+            { t: 'GUN_AWM',    p: new THREE.Vector3(38, 8.0, -38) },     // Villa Rooftop
+            { t: 'MEDKIT',     p: new THREE.Vector3(36, 0.4, -36) },     // Villa Living room
+            { t: 'ARMOR',      p: new THREE.Vector3(-42, 4.2, -44) },    // Townhouse 2nd floor
+            { t: 'GUN_DEAGLE', p: new THREE.Vector3(-42, 8.0, -44) },    // Townhouse 3rd floor
+            { t: 'GUN_SPAS12', p: new THREE.Vector3(-42, 11.8, -44) },   // Townhouse Rooftop
+            { t: 'GUN_AK47',   p: new THREE.Vector3(42, 0.4, 44) },      // Central Barracks
+            { t: 'MEDKIT',     p: new THREE.Vector3(-42, 0.4, 42) },     // SW Crossroads Villa
+
             // Center Town Square & Roads
-            { t: 'GUN_AK47', p: new THREE.Vector3(8, 0.4, 8) },
+            { t: 'GUN_AK47',   p: new THREE.Vector3(8, 0.4, 8) },
             { t: 'GUN_DEAGLE', p: new THREE.Vector3(-8, 0.4, 12) },
             { t: 'GUN_SPAS12', p: new THREE.Vector3(12, 0.4, -15) },
-            { t: 'AMMO', p: new THREE.Vector3(10, 0.4, 10) },
-            { t: 'ARMOR', p: new THREE.Vector3(0, 0.4, 0) },
+            { t: 'AMMO',       p: new THREE.Vector3(10, 0.4, 10) },
+            { t: 'ARMOR',      p: new THREE.Vector3(0, 0.4, 0) },
 
-            // Military Barracks & Rooftops
-            { t: 'GUN_AK47', p: new THREE.Vector3(-45, 8.2, -55) },
-            { t: 'GUN_AWM', p: new THREE.Vector3(-80, 12.0, -35) },
-            { t: 'AMMO', p: new THREE.Vector3(-42, 8.2, -52) },
-            { t: 'MEDKIT', p: new THREE.Vector3(-82, 12.0, -32) },
-            { t: 'ARMOR', p: new THREE.Vector3(-50, 12.0, 45) },
+            // North Hills Compound
+            { t: 'GUN_AK47',   p: new THREE.Vector3(-42, 4.2, -180) },
+            { t: 'GUN_AWM',    p: new THREE.Vector3(40, 11.8, -195) },
+            { t: 'ARMOR',      p: new THREE.Vector3(-38, 0.4, -275) },
+            { t: 'MEDKIT',     p: new THREE.Vector3(42, 4.2, -285) },
 
-            // Industrial Depot & Hangar
-            { t: 'GUN_SPAS12', p: new THREE.Vector3(-100, 0.5, -60) },
-            { t: 'GUN_DEAGLE', p: new THREE.Vector3(-115, 0.5, -45) },
-            { t: 'AMMO', p: new THREE.Vector3(-98, 0.5, -58) },
+            // West Downtown Commercial Blocks
+            { t: 'GUN_AK47',   p: new THREE.Vector3(-185, 0.4, -55) },
+            { t: 'GUN_AWM',    p: new THREE.Vector3(-185, 0.4, -140) },
+            { t: 'GUN_SPAS12', p: new THREE.Vector3(-185, 0.4, 65) },
+            { t: 'AMMO',       p: new THREE.Vector3(-140, 0.4, -140) },
+            { t: 'MEDKIT',     p: new THREE.Vector3(-245, 0.4, -140) },
+            { t: 'ARMOR',      p: new THREE.Vector3(-185, 0.4, -210) },
 
-            // Watchtower & Sniper Posts
-            { t: 'GUN_AWM', p: new THREE.Vector3(-20, 12.4, -115) },
-            { t: 'AMMO', p: new THREE.Vector3(-19, 12.4, -114) },
-            { t: 'MEDKIT', p: new THREE.Vector3(110, 12.4, -70) },
+            // North-East Modern Residential Suburb
+            { t: 'GUN_AK47',   p: new THREE.Vector3(165, 0.4, -62) },
+            { t: 'GUN_AWM',    p: new THREE.Vector3(165, 0.4, -170) },
+            { t: 'GUN_DEAGLE', p: new THREE.Vector3(115, 0.4, -170) },
+            { t: 'GUN_SPAS12', p: new THREE.Vector3(230, 0.4, -170) },
+            { t: 'MEDKIT',     p: new THREE.Vector3(165, 0.4, -240) },
+            { t: 'ARMOR',      p: new THREE.Vector3(230, 0.4, -90) },
 
-            // Villas & Townhouses
-            { t: 'GUN_DEAGLE', p: new THREE.Vector3(90, 3.6, 25) },
-            { t: 'GUN_AK47', p: new THREE.Vector3(85, 0.4, 45) },
-            { t: 'MEDKIT', p: new THREE.Vector3(50, 0.4, 80) },
-            { t: 'GUN_SPAS12', p: new THREE.Vector3(-60, 0.4, 105) },
-            { t: 'ARMOR', p: new THREE.Vector3(125, 0.4, 15) },
+            // South-Central Garrison & Industrial Power Plant
+            { t: 'GUN_SPAS12', p: new THREE.Vector3(-72, 4.2, 95) },
+            { t: 'GUN_AK47',   p: new THREE.Vector3(-65, 0.4, 155) },
+            { t: 'GUN_AWM',    p: new THREE.Vector3(48, 11.8, 135) },
+            { t: 'ARMOR',      p: new THREE.Vector3(-35, 0.4, 240) },
+            { t: 'AMMO',       p: new THREE.Vector3(-95, 0.4, 240) },
 
-            // Modern Luxury Residential District & Downtown City Blocks
-            { t: 'GUN_AK47', p: new THREE.Vector3(55, 0.4, -45) },
-            { t: 'GUN_AWM', p: new THREE.Vector3(95, 0.4, -45) },
-            { t: 'GUN_DEAGLE', p: new THREE.Vector3(135, 0.4, -50) },
-            { t: 'GUN_SPAS12', p: new THREE.Vector3(55, 0.4, -90) },
-            { t: 'MEDKIT', p: new THREE.Vector3(95, 0.4, -95) },
-            { t: 'ARMOR', p: new THREE.Vector3(145, 0.4, -100) },
-            { t: 'GUN_AK47', p: new THREE.Vector3(-60, 0.4, -30) },
-            { t: 'GUN_AWM', p: new THREE.Vector3(-95, 0.4, -40) },
-            { t: 'MEDKIT', p: new THREE.Vector3(-140, 0.4, -30) },
-            { t: 'AMMO', p: new THREE.Vector3(-105, 0.4, -95) }
+            // East Airbase Hangars & Runway
+            { t: 'MEDKIT',     p: new THREE.Vector3(198, 0.4, 105) },
+            { t: 'GUN_AWM',    p: new THREE.Vector3(198, 0.4, 225) },
+            { t: 'GUN_AK47',   p: new THREE.Vector3(245, 0.4, 125) }, // Next to McLaren on runway!
+            { t: 'AMMO',       p: new THREE.Vector3(248, 0.4, 130) },
+
+            // Watchtower Sniper Posts (Top Deck Y = 12.4)
+            { t: 'GUN_AWM',    p: new THREE.Vector3(0, 12.4, -340) },
+            { t: 'AMMO',       p: new THREE.Vector3(-210, 12.4, 245) },
+            { t: 'MEDKIT',     p: new THREE.Vector3(155, 12.4, 295) },
+            { t: 'GUN_AWM',    p: new THREE.Vector3(-330, 12.4, 0) }
         ];
 
         lootSpawns.forEach(item => {
@@ -316,11 +351,12 @@ class GameEngine {
 
         // Spawn Free Fire Gloo Wall Pickups
         const glooSpawns = [
-            new THREE.Vector3(5, 0.4, 5),
-            new THREE.Vector3(-25, 0.4, -25),
-            new THREE.Vector3(45, 0.4, 35),
-            new THREE.Vector3(-45, 8.2, -50),
-            new THREE.Vector3(75, 0.4, -60)
+            new THREE.Vector3(6, 0.4, 6),
+            new THREE.Vector3(-35, 0.4, -30),
+            new THREE.Vector3(55, 0.4, 35),
+            new THREE.Vector3(165, 0.4, -110),
+            new THREE.Vector3(-185, 0.4, -80),
+            new THREE.Vector3(198, 0.4, 165)
         ];
         glooSpawns.forEach(pos => {
             this.lootManager.spawnGroundItem('GLOO_WALL', pos);
@@ -330,18 +366,18 @@ class GameEngine {
         const grenadeSpawns = [
             new THREE.Vector3(12, 0.4, 18),
             new THREE.Vector3(-15, 0.4, 25),
-            new THREE.Vector3(28, 4.2, -30),   // Villa 2nd floor
-            new THREE.Vector3(-32, 4.2, -43),  // Townhouse 2nd floor
-            new THREE.Vector3(-110, 0.4, -68), // Barracks entrance
-            new THREE.Vector3(118, 0.4, -75),  // Hangar interior
-            new THREE.Vector3(-85, 0.4, -30)
+            new THREE.Vector3(38, 4.2, -36),   // Central Villa 2nd floor
+            new THREE.Vector3(-42, 4.2, -42),  // Townhouse 2nd floor
+            new THREE.Vector3(-65, 0.4, 150),  // South Barracks
+            new THREE.Vector3(198, 0.4, 110),  // Hangar interior
+            new THREE.Vector3(165, 0.4, -155)  // NE Suburb
         ];
         grenadeSpawns.forEach(pos => {
             this.lootManager.spawnGroundItem('GRENADE', pos);
         });
 
-        // Spawn Initial Parachuting Airdrop Crate with laser beacon
-        this.lootManager.spawnAirdrop(new THREE.Vector3(15, 0.7, -20));
+        // Spawn Initial Parachuting Airdrop Crate matching the roadside beam
+        this.lootManager.spawnAirdrop(new THREE.Vector3(18, 0.7, -24));
     }
 
     initMinimap() {
@@ -355,15 +391,18 @@ class GameEngine {
         if (!this.player || !this.inventory || this.inventory.grenadeCount <= 0) return;
         this.inventory.grenadeCount--;
         if (this.hud) this.hud.updateGrenadeUi(this.inventory.grenadeCount);
+        if (typeof this.player.onThrowGrenade === 'function') {
+            this.player.onThrowGrenade();
+        }
 
         const startPos = this.player.position.clone();
         startPos.y += 1.6;
 
         // Throw direction along camera view
         const dir = new THREE.Vector3(
-            Math.sin(this.player.rotationY),
+            -Math.sin(this.player.rotationY),
             Math.tan(-this.player.pitch) + 0.35, // arc upward
-            Math.cos(this.player.rotationY)
+            -Math.cos(this.player.rotationY)
         ).normalize();
 
         const velocity = dir.multiplyScalar(22);
@@ -401,12 +440,24 @@ class GameEngine {
         return (tmin <= maxDist) ? tmin : null;
     }
 
+    _getSharedColorMat(colorHex) {
+        if (!this._sharedColorMats.has(colorHex)) {
+            this._sharedColorMats.set(colorHex, new THREE.MeshBasicMaterial({ color: colorHex }));
+        }
+        return this._sharedColorMats.get(colorHex);
+    }
+
+    _getSharedTracerMat(colorHex) {
+        if (!this._sharedTracerMats.has(colorHex)) {
+            this._sharedTracerMats.set(colorHex, new THREE.LineBasicMaterial({ color: colorHex, linewidth: 2 }));
+        }
+        return this._sharedTracerMats.get(colorHex);
+    }
+
     spawnImpactSparks(pos, colorHex = 0xF59E0B) {
+        const mat = this._getSharedColorMat(colorHex);
         for (let i = 0; i < 6; i++) {
-            const spark = new THREE.Mesh(
-                new THREE.SphereGeometry(0.06, 4, 4),
-                new THREE.MeshBasicMaterial({ color: colorHex })
-            );
+            const spark = new THREE.Mesh(this._sharedSparkGeom, mat);
             spark.position.copy(pos);
             const vel = new THREE.Vector3(
                 (Math.random() - 0.5) * 4,
@@ -414,7 +465,7 @@ class GameEngine {
                 (Math.random() - 0.5) * 4
             );
             this.scene.add(spark);
-            this.explosionParticles.push({ mesh: spark, vel: vel, life: 0.25 });
+            this.explosionParticles.push({ mesh: spark, vel: vel, life: 0.25, maxLife: 0.25, sharedResources: true });
         }
     }
 
@@ -441,6 +492,9 @@ class GameEngine {
         weapon.ammoInMag--;
         this.inventory.lastFireTime = now;
         this.hud.updateWeaponUi();
+        if (typeof this.player.onFireTriggered === 'function') {
+            this.player.onFireTriggered();
+        }
 
         // Audio Trigger
         if (window.soundEngine && typeof window.soundEngine[weapon.sound] === 'function') {
@@ -547,33 +601,31 @@ class GameEngine {
 
     spawnBulletTracer(start, end, colorHex = 0xFDE047) {
         const geom = new THREE.BufferGeometry().setFromPoints([start, end]);
-        const mat = new THREE.LineBasicMaterial({ color: colorHex, linewidth: 2 });
+        const mat = this._getSharedTracerMat(colorHex);
         const line = new THREE.Line(geom, mat);
         this.scene.add(line);
         this.bulletTracers.push({ line: line, life: 0.08 });
     }
 
     spawnExplosionEffect(pos) {
-        // 1. Expanding High-Heat Fireball Dome
-        const fireballGeom = new THREE.SphereGeometry(1.2, 16, 16);
+        // 1. Expanding High-Heat Fireball Dome (reuses shared SphereGeometry!)
         const fireballMat = new THREE.MeshBasicMaterial({
             color: 0xF59E0B,
             transparent: true,
             opacity: 0.95
         });
-        const fireball = new THREE.Mesh(fireballGeom, fireballMat);
+        const fireball = new THREE.Mesh(this._sharedFireballGeom, fireballMat);
         fireball.position.copy(pos);
         this.scene.add(fireball);
 
-        // 2. Expanding Ground Shockwave Blast Ring
-        const ringGeom = new THREE.RingGeometry(0.6, 1.4, 32);
+        // 2. Expanding Ground Shockwave Blast Ring (reuses shared RingGeometry!)
         const ringMat = new THREE.MeshBasicMaterial({
             color: 0xEA580C,
             transparent: true,
             opacity: 0.85,
             side: THREE.DoubleSide
         });
-        const ring = new THREE.Mesh(ringGeom, ringMat);
+        const ring = new THREE.Mesh(this._sharedRingGeom, ringMat);
         ring.rotation.x = -Math.PI / 2;
         ring.position.set(pos.x, pos.y + 0.05, pos.z);
         this.scene.add(ring);
@@ -587,15 +639,12 @@ class GameEngine {
             this.scene.remove(flashLight);
         }, 180);
 
-        // 4. Fiery Shrapnel & Smoke Debris Particles
-        for (let i = 0; i < 32; i++) {
-            const geom = new THREE.SphereGeometry(0.3 + Math.random() * 0.45, 6, 6);
-            const mat = new THREE.MeshBasicMaterial({
-                color: (i % 3 === 0 ? 0xEF4444 : (i % 3 === 1 ? 0xF59E0B : 0x475569)),
-                transparent: true,
-                opacity: 0.95
-            });
-            const p = new THREE.Mesh(geom, mat);
+        // 4. Fiery Shrapnel & Smoke Debris Particles (100% shared geometry + shared materials)
+        const debrisColors = [0xEF4444, 0xF59E0B, 0x475569];
+        for (let i = 0; i < 24; i++) {
+            const p = new THREE.Mesh(this._sharedDebrisGeom, this._getSharedColorMat(debrisColors[i % 3]));
+            const s = 0.85 + Math.random() * 1.1;
+            p.scale.set(s, s, s);
             p.position.copy(pos);
 
             const vel = new THREE.Vector3(
@@ -604,23 +653,25 @@ class GameEngine {
                 (Math.random() - 0.5) * 18
             );
             this.scene.add(p);
-            this.explosionParticles.push({ mesh: p, vel: vel, life: 0.85, maxLife: 0.85 });
+            this.explosionParticles.push({ mesh: p, vel: vel, life: 0.85, maxLife: 0.85, sharedResources: true });
         }
 
-        // Track fireball & shockwave in particle updates
+        // Track fireball & shockwave in particle updates (unique material disposed on expiry)
         this.explosionParticles.push({
             mesh: fireball,
             vel: new THREE.Vector3(0, 1.2, 0),
             life: 0.55,
             maxLife: 0.55,
-            isFireball: true
+            isFireball: true,
+            disposeMaterial: true
         });
         this.explosionParticles.push({
             mesh: ring,
             vel: new THREE.Vector3(0, 0, 0),
             life: 0.5,
             maxLife: 0.5,
-            isShockwave: true
+            isShockwave: true,
+            disposeMaterial: true
         });
 
         // 5. Camera Trauma Shake
@@ -671,7 +722,7 @@ class GameEngine {
         const h = this.minimapCanvas.height;
         const cx = w / 2;
         const cy = h / 2;
-        const scale = 0.40; // Scale factor for radar radius
+        const scale = 0.26; // Scale factor for expanded 520m island radar
 
         ctx.clearRect(0, 0, w, h);
 
@@ -688,11 +739,11 @@ class GameEngine {
         // 2. Island terrain circle (Center is at 0, 0 in world coords)
         const islandScreenX = cx + (0 - this.player.position.x) * scale;
         const islandScreenY = cy + (0 - this.player.position.z) * scale;
-        const islandRadius = 360 * scale;
+        const islandRadius = 520 * scale;
 
         // Sand Shoreline Ring
         ctx.beginPath();
-        ctx.arc(islandScreenX, islandScreenY, islandRadius + 8 * scale, 0, Math.PI * 2);
+        ctx.arc(islandScreenX, islandScreenY, islandRadius + 10 * scale, 0, Math.PI * 2);
         ctx.fillStyle = '#FDE047';
         ctx.fill();
 
@@ -702,38 +753,44 @@ class GameEngine {
         ctx.fillStyle = '#15803D';
         ctx.fill();
 
-        // 3. Roads & Runway
+        // 3. Roads, Avenues, Runway & Bridge
         ctx.fillStyle = '#1E293B';
-        // North-South Highway (width 16, length 520 centered at 0, 0)
-        ctx.fillRect(islandScreenX - 8 * scale, islandScreenY - 260 * scale, 16 * scale, 520 * scale);
-        // East-West Road (length 520, width 16 centered at 0, 0)
-        ctx.fillRect(islandScreenX - 260 * scale, islandScreenY - 8 * scale, 520 * scale, 16 * scale);
-        // Residential Suburb Boulevard
-        ctx.fillRect(islandScreenX + (105 - 6) * scale, islandScreenY + (-100 - 90) * scale, 12 * scale, 180 * scale);
-        // Airport Runway (at x=145, z=50, size 34 x 280)
-        const rwX = islandScreenX + (145 - 17) * scale;
-        const rwY = islandScreenY + (50 - 140) * scale;
+        // North-South & East-West Highways (860m)
+        ctx.fillRect(islandScreenX - 8 * scale, islandScreenY - 430 * scale, 16 * scale, 860 * scale);
+        ctx.fillRect(islandScreenX - 430 * scale, islandScreenY - 8 * scale, 860 * scale, 16 * scale);
+        // West Downtown Avenue & Cross Street
+        ctx.fillRect(islandScreenX + (-185 - 7) * scale, islandScreenY + (-30 - 210) * scale, 14 * scale, 420 * scale);
+        ctx.fillRect(islandScreenX + (-155 - 155) * scale, islandScreenY + (-140 - 6) * scale, 310 * scale, 12 * scale);
+        // NE Suburb Boulevard & Cross Street
+        ctx.fillRect(islandScreenX + (165 - 6) * scale, islandScreenY + (-165 - 165) * scale, 12 * scale, 330 * scale);
+        ctx.fillRect(islandScreenX + (155 - 155) * scale, islandScreenY + (-170 - 6) * scale, 310 * scale, 12 * scale);
+        // South Industrial Road
+        ctx.fillRect(islandScreenX + (-20 - 220) * scale, islandScreenY + (210 - 6) * scale, 440 * scale, 12 * scale);
+        // Coastal Bridge (x: 420..560)
+        ctx.fillStyle = '#64748B';
+        ctx.fillRect(islandScreenX + 420 * scale, islandScreenY - 9 * scale, 140 * scale, 18 * scale);
+        // East Airbase Runway (x=255, z=30..330)
         ctx.fillStyle = '#0F172A';
-        ctx.fillRect(rwX, rwY, 34 * scale, 280 * scale);
+        ctx.fillRect(islandScreenX + (255 - 18) * scale, islandScreenY + (180 - 150) * scale, 36 * scale, 300 * scale);
 
         // 4. Buildings Footprints
         if (this.map && this.map.buildingConfigs) {
             for (const b of this.map.buildingConfigs) {
                 const bx = cx + (b.x - this.player.position.x) * scale;
                 const by = cy + (b.z - this.player.position.z) * scale;
-                let bw = 12 * scale;
-                let bh = 14 * scale;
+                let bw = (b.w || 14) * scale;
+                let bh = (b.d || 14) * scale;
                 let bColor = '#EA580C'; // Villa terracotta
                 if (b.type === 'townhouse') {
-                    bw = 14 * scale; bh = 16 * scale; bColor = '#3B82F6';
+                    bColor = '#3B82F6';
                 } else if (b.type === 'barracks') {
-                    bw = 20 * scale; bh = 10 * scale; bColor = '#4ADE80';
+                    bColor = '#4ADE80';
                 } else if (b.type === 'hangar') {
-                    bw = 18 * scale; bh = 26 * scale; bColor = '#64748B';
+                    bColor = '#64748B';
                 } else if (b.type === 'city') {
-                    bw = 16 * scale; bh = 18 * scale; bColor = '#06B6D4'; // City commercial block
+                    bColor = '#06B6D4'; // City commercial block
                 } else if (b.type === 'modern') {
-                    bw = 13 * scale; bh = 13 * scale; bColor = '#10B981'; // Modern luxury villa
+                    bColor = '#10B981'; // Modern luxury villa
                 }
 
                 ctx.save();
@@ -1000,17 +1057,18 @@ class GameEngine {
             }
         }
 
-        // Update Bullet Tracers
+        // Update Bullet Tracers (dispose dynamic BufferGeometry cleanly to prevent WebGL leaks!)
         for (let i = this.bulletTracers.length - 1; i >= 0; i--) {
             const tracer = this.bulletTracers[i];
             tracer.life -= dt;
             if (tracer.life <= 0) {
                 this.scene.remove(tracer.line);
+                if (tracer.line.geometry) tracer.line.geometry.dispose();
                 this.bulletTracers.splice(i, 1);
             }
         }
 
-        // Update Explosion Particles
+        // Update Explosion Particles (dispose non-shared materials cleanly)
         for (let i = this.explosionParticles.length - 1; i >= 0; i--) {
             const ep = this.explosionParticles[i];
             ep.life -= dt;
@@ -1036,6 +1094,9 @@ class GameEngine {
 
             if (ep.life <= 0) {
                 this.scene.remove(ep.mesh);
+                if (ep.disposeMaterial && ep.mesh.material) {
+                    ep.mesh.material.dispose();
+                }
                 this.explosionParticles.splice(i, 1);
             }
         }

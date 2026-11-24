@@ -17,6 +17,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,6 +61,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -110,6 +112,8 @@ import kotlin.math.sqrt
 
 @Composable
 fun CarromBoardScreen(
+    initialVsBot: Boolean = true,
+    initialBotAccuracy: Int = 80,
     onRecordMatch: (outcome: GameMatchResult, score: Int, vsBot: Boolean, botAccuracy: Int) -> Unit = { _, _, _, _ -> },
     onExit: () -> Unit = {}
 ) {
@@ -118,13 +122,16 @@ fun CarromBoardScreen(
     val gStrings by LanguageManager.gameStrings.collectAsStateWithLifecycle()
     val financeColors = LocalFinanceColors.current
 
-    var playVsBot by remember { mutableStateOf(true) }
-    var botAccuracy by remember { mutableIntStateOf(80) }
+    var playVsBot by remember { mutableStateOf(initialVsBot) }
+    var botAccuracy by remember { mutableIntStateOf(initialBotAccuracy) }
     var showRules by remember { mutableStateOf(false) }
+    var matchSessionId by remember { mutableIntStateOf(0) }
 
     var gameState by remember {
-        mutableStateOf(CarromEngine.newGame(isVsBot = true, botAccuracy = 80))
+        mutableStateOf(CarromEngine.newGame(isVsBot = initialVsBot, botAccuracy = initialBotAccuracy))
     }
+    val latestGameState by rememberUpdatedState(gameState)
+    val latestPlayVsBot by rememberUpdatedState(playVsBot)
 
     var dragStartOffset by remember { mutableStateOf<Offset?>(null) }
     var currentDragOffset by remember { mutableStateOf<Offset?>(null) }
@@ -138,6 +145,7 @@ fun CarromBoardScreen(
 
     // Reset game helper
     fun resetGame() {
+        matchSessionId++
         gameState = CarromEngine.newGame(isVsBot = playVsBot, botAccuracy = botAccuracy)
         dragStartOffset = null
         currentDragOffset = null
@@ -160,11 +168,13 @@ fun CarromBoardScreen(
     }
 
     // Continuous 60fps Physics Simulation Loop
-    LaunchedEffect(gameState.phase) {
+    LaunchedEffect(gameState.phase, matchSessionId) {
         if (gameState.phase == CarromPhase.MOVING) {
+            val session = matchSessionId
             var lastTime = System.nanoTime()
-            while (isActive && gameState.phase == CarromPhase.MOVING) {
+            while (isActive && session == matchSessionId && gameState.phase == CarromPhase.MOVING) {
                 withFrameNanos { now ->
+                    if (session != matchSessionId) return@withFrameNanos
                     val dt = ((now - lastTime) / 1_000_000_000f).coerceIn(0.008f, 0.033f)
                     lastTime = now
                     val oldPieces = gameState.pieces
@@ -185,20 +195,31 @@ fun CarromBoardScreen(
         }
     }
 
-    // Bot AI Turn execution
-    LaunchedEffect(gameState.turn, gameState.phase, playVsBot, botAccuracy) {
+    // Bot AI Turn execution — keyed on shotNumber & matchSessionId so consecutive bot extra turns reliably trigger
+    LaunchedEffect(gameState.turn, gameState.phase, gameState.shotNumber, playVsBot, botAccuracy, matchSessionId) {
         if (playVsBot && gameState.turn == CarromTurn.PLAYER_2 && gameState.phase == CarromPhase.AIMING && gameState.winner == null) {
+            val session = matchSessionId
             botThinking = true
             delay(650L) // Bot thinking delay
+            if (session != matchSessionId) {
+                botThinking = false
+                return@LaunchedEffect
+            }
             val (botX, impulse) = CarromBotAi.computeBotShot(gameState, botAccuracy)
 
             // Step 1: Slide striker to chosen baseline position
             gameState = CarromEngine.setStrikerBaselineX(gameState, botX)
             delay(350L) // Aiming pause
+            if (session != matchSessionId) {
+                botThinking = false
+                return@LaunchedEffect
+            }
 
             // Step 2: Strike!
             GameSoundEngine.play(GameSoundEffect.TAP)
             gameState = CarromEngine.shootStriker(gameState, impulse.x, impulse.y)
+            botThinking = false
+        } else {
             botThinking = false
         }
     }
@@ -266,40 +287,85 @@ fun CarromBoardScreen(
             Canvas(
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInput(gameState.phase, gameState.turn, playVsBot) {
-                        if (gameState.phase != CarromPhase.AIMING) return@pointerInput
-                        if (playVsBot && gameState.turn == CarromTurn.PLAYER_2) return@pointerInput
+                    .pointerInput(matchSessionId) {
+                        detectTapGestures { tapOffset ->
+                            val state = latestGameState
+                            if (state.phase != CarromPhase.AIMING) return@detectTapGestures
+                            if (latestPlayVsBot && state.turn == CarromTurn.PLAYER_2) return@detectTapGestures
 
+                            val halfBoard = size.width.coerceAtMost(size.height) / 2f
+                            if (halfBoard <= 0f) return@detectTapGestures
+                            val normX = (tapOffset.x - halfBoard) / halfBoard
+                            val normY = (tapOffset.y - halfBoard) / halfBoard
+
+                            // Direct tap along the active baseline moves striker to that exact spot
+                            if (kotlin.math.abs(normY - state.strikerBaselineY) <= 0.16f) {
+                                gameState = CarromEngine.setStrikerBaselineX(state, normX)
+                            }
+                        }
+                    }
+                    .pointerInput(matchSessionId) {
+                        var isSlidingStriker = false
                         detectDragGestures(
                             onDragStart = { offset ->
+                                val state = latestGameState
+                                if (state.phase != CarromPhase.AIMING) return@detectDragGestures
+                                if (latestPlayVsBot && state.turn == CarromTurn.PLAYER_2) return@detectDragGestures
+                                val halfBoard = size.width.coerceAtMost(size.height) / 2f
+                                val normY = if (halfBoard > 0f) (offset.y - halfBoard) / halfBoard else 0f
+                                isSlidingStriker = kotlin.math.abs(normY - state.strikerBaselineY) <= 0.14f
                                 dragStartOffset = offset
                                 currentDragOffset = offset
                             },
                             onDrag = { change, _ ->
+                                val state = latestGameState
+                                if (state.phase != CarromPhase.AIMING) return@detectDragGestures
+                                if (latestPlayVsBot && state.turn == CarromTurn.PLAYER_2) return@detectDragGestures
                                 change.consume()
                                 currentDragOffset = change.position
+                                val start = dragStartOffset ?: return@detectDragGestures
+                                val dx = change.position.x - start.x
+                                val dy = change.position.y - start.y
+                                val halfBoard = size.width.coerceAtMost(size.height) / 2f
+                                if (isSlidingStriker && kotlin.math.abs(dy) > 28f && kotlin.math.abs(dy) > kotlin.math.abs(dx) * 1.1f) {
+                                    // Player switched into pulling back to shoot
+                                    isSlidingStriker = false
+                                }
+                                if (isSlidingStriker && halfBoard > 0f) {
+                                    val normX = (change.position.x - halfBoard) / halfBoard
+                                    gameState = CarromEngine.setStrikerBaselineX(state, normX)
+                                }
                             },
                             onDragEnd = {
+                                val state = latestGameState
                                 val start = dragStartOffset
                                 val curr = currentDragOffset
-                                if (start != null && curr != null) {
+                                if (
+                                    !isSlidingStriker &&
+                                    state.phase == CarromPhase.AIMING &&
+                                    !(latestPlayVsBot && state.turn == CarromTurn.PLAYER_2) &&
+                                    start != null &&
+                                    curr != null
+                                ) {
                                     val dx = (start.x - curr.x)
                                     val dy = (start.y - curr.y)
                                     val dist = sqrt(dx * dx + dy * dy)
                                     if (dist > 25f) {
-                                        // Convert drag offset into impulse normalized for carrom board space
-                                        val impulseScale = 0.0075f
+                                        // Balanced strike impulse for realistic carrom rebound control
+                                        val impulseScale = 0.0046f
                                         val impulseX = (dx * impulseScale).coerceIn(-CarromEngine.MAX_IMPULSE, CarromEngine.MAX_IMPULSE)
                                         val impulseY = (dy * impulseScale).coerceIn(-CarromEngine.MAX_IMPULSE, CarromEngine.MAX_IMPULSE)
 
                                         GameSoundEngine.play(GameSoundEffect.TAP)
-                                        gameState = CarromEngine.shootStriker(gameState, impulseX, impulseY)
+                                        gameState = CarromEngine.shootStriker(state, impulseX, impulseY)
                                     }
                                 }
+                                isSlidingStriker = false
                                 dragStartOffset = null
                                 currentDragOffset = null
                             },
                             onDragCancel = {
+                                isSlidingStriker = false
                                 dragStartOffset = null
                                 currentDragOffset = null
                             }
@@ -330,8 +396,11 @@ fun CarromBoardScreen(
                         val pullDx = dragStartOffset!!.x - currentDragOffset!!.x
                         val pullDy = dragStartOffset!!.y - currentDragOffset!!.y
                         val pullDist = sqrt(pullDx * pullDx + pullDy * pullDy)
+                        val startNormY = if (halfBoard > 0f) (dragStartOffset!!.y - halfBoard) / halfBoard else 0f
+                        val isSlidingAlongBaseline = kotlin.math.abs(startNormY - gameState.strikerBaselineY) <= 0.14f &&
+                            kotlin.math.abs(pullDy) <= kotlin.math.abs(pullDx) * 1.1f
 
-                        if (pullDist > 15f) {
+                        if (pullDist > 15f && !isSlidingAlongBaseline) {
                             val aimAngle = atan2(pullDy, pullDx)
                             val aimLength = (pullDist * 2.5f).coerceIn(40f, boardSize * 0.75f)
                             val aimTarget = Offset(
@@ -426,7 +495,7 @@ fun CarromBoardScreen(
                         onValueChange = { newX ->
                             gameState = CarromEngine.setStrikerBaselineX(gameState, newX)
                         },
-                        valueRange = -0.55f..0.55f,
+                        valueRange = -CarromEngine.BASELINE_MAX_X..CarromEngine.BASELINE_MAX_X,
                         colors = SliderDefaults.colors(
                             thumbColor = Color(0xFF0284C7),
                             activeTrackColor = Color(0xFF38BDF8),
@@ -437,11 +506,35 @@ fun CarromBoardScreen(
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { gameState = CarromEngine.setStrikerBaselineX(gameState, -CarromEngine.BASELINE_MAX_X) },
+                            modifier = Modifier.weight(1f).testTag("carrom_striker_left_btn")
+                        ) {
+                            Text("Left", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
+                            onClick = { gameState = CarromEngine.setStrikerBaselineX(gameState, 0f) },
+                            modifier = Modifier.weight(1f).testTag("carrom_striker_center_btn")
+                        ) {
+                            Text("Center", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
+                            onClick = { gameState = CarromEngine.setStrikerBaselineX(gameState, CarromEngine.BASELINE_MAX_X) },
+                            modifier = Modifier.weight(1f).testTag("carrom_striker_right_btn")
+                        ) {
+                            Text("Right", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            "💡 Tip: Drag backward from the striker on the board to aim and shoot!",
+                            "Slide or tap anywhere on the baseline to position striker, then pull back on the board to strike!",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f)
@@ -518,7 +611,7 @@ private fun CarromScoreHeader(
     state: CarromGameState,
     playVsBot: Boolean,
     botThinking: Boolean,
-    financeColors: com.example.ui.theme.FinanceColors
+    financeColors: com.example.ui.theme.FinanceExtendedColors
 ) {
     Surface(
         shape = RoundedCornerShape(20.dp),
@@ -808,8 +901,8 @@ private fun DrawScope.drawBoardMarkings(boardSize: Float, halfBoard: Float, cent
     )
     baselineCoords.forEach { baseNormY ->
         val y = halfBoard + (baseNormY * halfBoard)
-        val xLeft = halfBoard - (0.55f * halfBoard)
-        val xRight = halfBoard + (0.55f * halfBoard)
+        val xLeft = halfBoard - (CarromEngine.BASELINE_MAX_X * halfBoard)
+        val xRight = halfBoard + (CarromEngine.BASELINE_MAX_X * halfBoard)
 
         // Baseline parallel rail 1
         drawLine(markColor, Offset(xLeft, y - 5.dp.toPx()), Offset(xRight, y - 5.dp.toPx()), strokeWidth = 2.dp.toPx())

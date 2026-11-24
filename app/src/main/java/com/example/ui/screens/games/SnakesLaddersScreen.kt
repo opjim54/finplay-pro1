@@ -50,6 +50,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -112,11 +113,14 @@ fun SnakesLaddersScreen(
     val scope = rememberCoroutineScope()
     val textMeasurer = rememberTextMeasurer()
 
-    var playerCount by remember { mutableIntStateOf(initialPlayerCount) }
+    var playerCount by remember { mutableIntStateOf(initialPlayerCount.coerceIn(2, 4)) }
     var playVsBot by remember { mutableStateOf(initialVsBot) }
     var botAccuracy by remember { mutableIntStateOf(initialBotAccuracy) }
+    var showRules by remember { mutableStateOf(false) }
     var isRollingAnim by remember { mutableStateOf(false) }
     var displayDice by remember { mutableIntStateOf(1) }
+    var rollTilt by remember { mutableFloatStateOf(0f) }
+    var matchSessionId by remember { mutableIntStateOf(0) }
     var resultRecorded by remember { mutableStateOf(false) }
     var lastBannerMsg by remember { mutableStateOf<String?>(null) }
 
@@ -126,42 +130,89 @@ fun SnakesLaddersScreen(
         )
     }
 
+    var animatedPositions by remember { mutableStateOf<Map<Int, Int>>(emptyMap()) }
+    var isSteppingAnim by remember { mutableStateOf(false) }
+
     fun resetGame(count: Int = playerCount, vsBot: Boolean = playVsBot, acc: Int = botAccuracy) {
+        matchSessionId++
+        isRollingAnim = false
+        isSteppingAnim = false
+        animatedPositions = emptyMap()
+        rollTilt = 0f
+        displayDice = 1
         resultRecorded = false
         lastBannerMsg = null
-        playerCount = count
+        playerCount = count.coerceIn(2, 4)
         playVsBot = vsBot
         botAccuracy = acc
-        state = SnakesLaddersEngine.newGame(count, vsBot, acc)
+        state = SnakesLaddersEngine.newGame(playerCount, vsBot, acc)
     }
 
-    // Bot Auto-turn handler
-    LaunchedEffect(state.currentTurnIndex, state.phase, state.winner) {
-        if (state.phase == SnakesPhase.WAIT_ROLL && state.winner == null) {
+    suspend fun animateMoveSteps(
+        playerId: Int,
+        playerName: String,
+        startPos: Int,
+        moveRes: SnakesLaddersEngine.MoveResult,
+        session: Int
+    ) {
+        isSteppingAnim = true
+        val rolledTarget = moveRes.intermediatePos
+        if (rolledTarget > startPos) {
+            for (cell in (startPos + 1)..rolledTarget) {
+                if (session != matchSessionId) return
+                animatedPositions = animatedPositions + (playerId to cell)
+                GameSoundEngine.play(GameSoundEffect.MOVE)
+                delay(75L)
+            }
+        }
+        if (moveRes.wasLadder || moveRes.wasSnake) {
+            if (session != matchSessionId) return
+            delay(240L)
+            if (session != matchSessionId) return
+            animatedPositions = animatedPositions + (playerId to moveRes.finalPos)
+            if (moveRes.wasLadder) {
+                GameSoundEngine.play(GameSoundEffect.SPECIAL)
+                lastBannerMsg = "🪜 $playerName climbed ladder to ${moveRes.finalPos}!"
+            } else {
+                GameSoundEngine.play(GameSoundEffect.CAPTURE)
+                lastBannerMsg = "🐍 $playerName slid down snake to ${moveRes.finalPos}!"
+            }
+        } else {
+            lastBannerMsg = moveRes.nextState.recentActionBanner
+        }
+        if (session != matchSessionId) return
+        animatedPositions = animatedPositions - playerId
+        isSteppingAnim = false
+        state = moveRes.nextState
+    }
+
+    if (showRules) {
+        GameRulesModalSheet(gameId = ArenaGameId.SNAKES_LADDERS, onDismiss = { showRules = false })
+    }
+
+    // Bot Auto-turn handler — keyed on turnSequence so consecutive bonus turns on 6 always fire
+    LaunchedEffect(state.turnSequence, state.phase, state.winner, matchSessionId) {
+        if (state.phase == SnakesPhase.WAIT_ROLL && state.winner == null && !isSteppingAnim) {
             val cur = state.currentPlayer
             if (cur.isBot) {
-                delay(650L + Random.nextLong(200L, 500L))
-                // Execute bot roll
+                val session = matchSessionId
+                delay(550L + Random.nextLong(150L, 400L))
+                if (session != matchSessionId) return@LaunchedEffect
                 isRollingAnim = true
                 for (i in 0 until 6) {
+                    if (session != matchSessionId) return@LaunchedEffect
                     displayDice = Random.nextInt(1, 7)
+                    rollTilt = if (i % 2 == 0) 13f else -13f
                     GameSoundEngine.play(GameSoundEffect.DICE_TICK)
                     delay(55L)
                 }
+                if (session != matchSessionId) return@LaunchedEffect
+                rollTilt = 0f
                 isRollingAnim = false
+                val startPos = cur.position
                 val moveRes = SnakesLaddersEngine.rollAndMove(state)
                 displayDice = moveRes.nextState.lastDiceValue
-                state = moveRes.nextState
-
-                if (moveRes.wasLadder) {
-                    GameSoundEngine.play(GameSoundEffect.SPECIAL)
-                    lastBannerMsg = "🪜 Bot climbed ladder to ${moveRes.finalPos}!"
-                } else if (moveRes.wasSnake) {
-                    GameSoundEngine.play(GameSoundEffect.CAPTURE)
-                    lastBannerMsg = "🐍 Bot caught by snake to ${moveRes.finalPos}!"
-                } else {
-                    GameSoundEngine.play(GameSoundEffect.MOVE)
-                }
+                animateMoveSteps(cur.id, cur.name, startPos, moveRes, session)
             }
         }
     }
@@ -184,32 +235,28 @@ fun SnakesLaddersScreen(
     }
 
     fun performRoll() {
-        if (isRollingAnim || state.phase != SnakesPhase.WAIT_ROLL || state.winner != null) return
+        if (isRollingAnim || isSteppingAnim || state.phase != SnakesPhase.WAIT_ROLL || state.winner != null) return
         val cur = state.currentPlayer
         if (cur.isBot) return
 
+        val session = matchSessionId
         scope.launch {
             isRollingAnim = true
             for (i in 0 until 7) {
+                if (session != matchSessionId) return@launch
                 displayDice = Random.nextInt(1, 7)
+                rollTilt = if (i % 2 == 0) 13f else -13f
                 GameSoundEngine.play(GameSoundEffect.DICE_TICK)
                 delay(50L)
             }
+            if (session != matchSessionId) return@launch
+            rollTilt = 0f
             isRollingAnim = false
 
+            val startPos = cur.position
             val moveRes = SnakesLaddersEngine.rollAndMove(state)
             displayDice = moveRes.nextState.lastDiceValue
-            state = moveRes.nextState
-
-            if (moveRes.wasLadder) {
-                GameSoundEngine.play(GameSoundEffect.SPECIAL)
-                lastBannerMsg = "🪜 Climbed ladder to ${moveRes.finalPos}!"
-            } else if (moveRes.wasSnake) {
-                GameSoundEngine.play(GameSoundEffect.CAPTURE)
-                lastBannerMsg = "🐍 Bitten by snake down to ${moveRes.finalPos}!"
-            } else {
-                GameSoundEngine.play(GameSoundEffect.MOVE)
-            }
+            animateMoveSteps(cur.id, cur.name, startPos, moveRes, session)
         }
     }
 
@@ -219,8 +266,8 @@ fun SnakesLaddersScreen(
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        Color(0xFF0F172A),
-                        Color(0xFF022C22),
+                        Color(0xFF090E1A),
+                        Color(0xFF042F2E),
                         Color(0xFF064E3B)
                     )
                 )
@@ -230,48 +277,60 @@ fun SnakesLaddersScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Top Action Bar
+        // Universal Bot & Rules Control Bar
+        UniversalBotControlBar(
+            playVsBot = playVsBot,
+            accuracyPercent = botAccuracy,
+            onToggleBot = { enabled -> resetGame(playerCount, enabled, botAccuracy) },
+            onAccuracyChange = { acc ->
+                botAccuracy = acc
+                state = state.copy(botAccuracy = acc)
+            },
+            onOpenRules = { showRules = true },
+            onRestart = { resetGame() }
+        )
+
+        // Player Count & Live Turn Status Header
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(
-                onClick = onExit,
-                modifier = Modifier.testTag("snakes_exit_btn")
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Exit",
-                    tint = Color.White
-                )
+                listOf(2, 3, 4).forEach { cnt ->
+                    FilterChip(
+                        selected = playerCount == cnt,
+                        onClick = {
+                            GameSoundEngine.play(GameSoundEffect.TAP)
+                            resetGame(cnt, playVsBot, botAccuracy)
+                        },
+                        label = {
+                            Text(
+                                text = "${cnt}P",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        },
+                        modifier = Modifier.testTag("snakes_player_count_${cnt}p")
+                    )
+                }
             }
 
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = "🐍 SNAKES & LADDERS 🪜",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontFamily = FontFamily.Serif,
-                        fontWeight = FontWeight.ExtraBold
-                    ),
-                    color = financeColors.champagneGold
-                )
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = Color(0xFF0F172A).copy(alpha = 0.72f),
+                border = BorderStroke(1.dp, financeColors.champagneGold.copy(alpha = 0.45f))
+            ) {
                 Text(
                     text = state.statusLog,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFFA7F3D0),
-                    maxLines = 1
-                )
-            }
-
-            IconButton(
-                onClick = { resetGame() },
-                modifier = Modifier.testTag("snakes_reset_btn")
-            ) {
-                Icon(
-                    Icons.Default.Refresh,
-                    contentDescription = "Reset",
-                    tint = Color.White
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF6EE7B7),
+                    maxLines = 1,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                 )
             }
         }
@@ -318,21 +377,20 @@ fun SnakesLaddersScreen(
                     val h = size.height
                     val cellSize = w / 10f
 
-                    // 1. Draw 10x10 Cells
+                    // 1. Draw 10x10 Luxury Emerald & Ivory Gold Cells
+                    val numFontSp = ((cellSize * 0.25f) / density).coerceIn(7.5f, 12f).sp
                     for (row in 0 until 10) {
                         for (col in 0 until 10) {
                             val left = col * cellSize
                             val top = (9 - row) * cellSize // row 0 at bottom
                             val isEven = (row + col) % 2 == 0
+                            val cellNumber = getCellNumber(row, col)
 
-                            // Alternating cell themes
-                            val cellColor = if (row == 9 && col == 0) {
-                                // Cell 100 (Grand Champion Castle)
-                                Color(0xFFF59E0B)
-                            } else if (isEven) {
-                                Color(0xFFF8FAFC)
-                            } else {
-                                Color(0xFFE2E8F0)
+                            val cellColor = when {
+                                cellNumber == 100 -> Color(0xFFF5C451) // Royal Champion Gold
+                                cellNumber == 1 -> Color(0xFFD1FAE5)   // Emerald Start Tile
+                                isEven -> Color(0xFFFAF8F0)            // Warm Ivory Pearl
+                                else -> Color(0xFFE6F4EE)              // Soft Royal Mint
                             }
 
                             drawRect(
@@ -341,22 +399,21 @@ fun SnakesLaddersScreen(
                                 size = Size(cellSize, cellSize)
                             )
                             drawRect(
-                                color = Color(0xFFCBD5E1),
+                                color = Color(0xFF065F46).copy(alpha = 0.22f),
                                 topLeft = Offset(left, top),
                                 size = Size(cellSize, cellSize),
-                                style = Stroke(width = 1f)
+                                style = Stroke(width = 1.2f)
                             )
 
-                            // Cell Number
-                            val cellNumber = getCellNumber(row, col)
+                            // Crisp Density-Normalized Cell Number (never overflows cell bounds)
                             drawText(
                                 textMeasurer = textMeasurer,
-                                text = cellNumber.toString(),
-                                topLeft = Offset(left + 3f, top + 2f),
+                                text = if (cellNumber == 100) "★100" else cellNumber.toString(),
+                                topLeft = Offset(left + cellSize * 0.08f, top + cellSize * 0.06f),
                                 style = TextStyle(
-                                    fontSize = (cellSize * 0.22f).sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (cellNumber == 100) Color(0xFF78350F) else Color(0xFF475569)
+                                    fontSize = numFontSp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = if (cellNumber == 100) Color(0xFF78350F) else Color(0xFF0F3D36)
                                 )
                             )
                         }
@@ -380,9 +437,8 @@ fun SnakesLaddersScreen(
                         )
                     }
 
-                    // 4. Draw Player Tokens
-                    // Group tokens on the same cell to calculate offset
-                    val cellGroups = state.players.groupBy { it.position }
+                    // 4. Draw Player Tokens (with live step-by-step animated position override)
+                    val cellGroups = state.players.groupBy { animatedPositions[it.id] ?: it.position }
                     for ((cell, playersOnCell) in cellGroups) {
                         if (cell == 0) continue // In start yard
                         val (row, col) = SnakesLaddersEngine.cellToRowCol(cell)
@@ -489,7 +545,7 @@ fun SnakesLaddersScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                val isHumanTurn = !state.currentPlayer.isBot && state.phase == SnakesPhase.WAIT_ROLL && state.winner == null
+                val isHumanTurn = !state.currentPlayer.isBot && state.phase == SnakesPhase.WAIT_ROLL && state.winner == null && !isSteppingAnim
                 val pulseTransition = rememberInfiniteTransition(label = "dice_pulse")
                 val pulseScale by pulseTransition.animateFloat(
                     initialValue = 1f,
@@ -505,9 +561,9 @@ fun SnakesLaddersScreen(
                     modifier = Modifier
                         .size(68.dp)
                         .graphicsLayer {
-                            scaleX = if (isRollingAnim) 0.9f else pulseScale
-                            scaleY = if (isRollingAnim) 0.9f else pulseScale
-                            rotationZ = if (isRollingAnim) Random.nextFloat() * 20f - 10f else 0f
+                            scaleX = if (isRollingAnim) 0.92f else pulseScale
+                            scaleY = if (isRollingAnim) 0.92f else pulseScale
+                            rotationZ = if (isRollingAnim) rollTilt else 0f
                         }
                         .shadow(12.dp, RoundedCornerShape(16.dp))
                         .clip(RoundedCornerShape(16.dp))
@@ -601,7 +657,7 @@ private fun getCellNumber(row: Int, col: Int): Int {
     return row * 10 + colInRow + 1
 }
 
-// Draw 3D Golden Ladder
+// Draw 3D Golden Brass Ladder with soft elevation shadow
 private fun DrawScope.draw3DLadder(bottomPos: Int, topPos: Int, cellSize: Float) {
     val (bRow, bCol) = SnakesLaddersEngine.cellToRowCol(bottomPos)
     val (tRow, tCol) = SnakesLaddersEngine.cellToRowCol(topPos)
@@ -617,40 +673,65 @@ private fun DrawScope.draw3DLadder(bottomPos: Int, topPos: Int, cellSize: Float)
     val perpX = -sin(angle) * (cellSize * 0.16f)
     val perpY = cos(angle) * (cellSize * 0.16f)
 
-    // Left Rail
+    // Soft Drop Shadow
+    val shadowOffset = Offset(3f, 4f)
     drawLine(
-        brush = Brush.linearGradient(listOf(Color(0xFFD97706), Color(0xFFFDE68A), Color(0xFFB45309))),
-        start = Offset(bx - perpX, by - perpY),
-        end = Offset(tx - perpX, ty - perpY),
-        strokeWidth = 5f,
+        color = Color.Black.copy(alpha = 0.24f),
+        start = Offset(bx - perpX, by - perpY) + shadowOffset,
+        end = Offset(tx - perpX, ty - perpY) + shadowOffset,
+        strokeWidth = 6f,
         cap = StrokeCap.Round
     )
-    // Right Rail
     drawLine(
-        brush = Brush.linearGradient(listOf(Color(0xFFD97706), Color(0xFFFDE68A), Color(0xFFB45309))),
-        start = Offset(bx + perpX, by + perpY),
-        end = Offset(tx + perpX, ty + perpY),
-        strokeWidth = 5f,
+        color = Color.Black.copy(alpha = 0.24f),
+        start = Offset(bx + perpX, by + perpY) + shadowOffset,
+        end = Offset(tx + perpX, ty + perpY) + shadowOffset,
+        strokeWidth = 6f,
         cap = StrokeCap.Round
     )
 
-    // Rungs (steps)
-    val rungsCount = 6
+    // Left & Right Brass Rails
+    val railBrush = Brush.linearGradient(listOf(Color(0xFF92400E), Color(0xFFFDE68A), Color(0xFFD97706)))
+    drawLine(
+        brush = railBrush,
+        start = Offset(bx - perpX, by - perpY),
+        end = Offset(tx - perpX, ty - perpY),
+        strokeWidth = 5.5f,
+        cap = StrokeCap.Round
+    )
+    drawLine(
+        brush = railBrush,
+        start = Offset(bx + perpX, by + perpY),
+        end = Offset(tx + perpX, ty + perpY),
+        strokeWidth = 5.5f,
+        cap = StrokeCap.Round
+    )
+
+    // Rungs (scaled by ladder length)
+    val dist = kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
+    val rungsCount = (dist / (cellSize * 0.55f)).toInt().coerceIn(4, 10)
     for (i in 1..rungsCount) {
         val fraction = i.toFloat() / (rungsCount + 1)
         val rx = bx + dx * fraction
         val ry = by + dy * fraction
         drawLine(
-            color = Color(0xFFF59E0B),
+            color = Color(0xFFB45309),
             start = Offset(rx - perpX, ry - perpY),
             end = Offset(rx + perpX, ry + perpY),
-            strokeWidth = 3.5f,
+            strokeWidth = 4f,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = Color(0xFFFEF08A),
+            start = Offset(rx - perpX * 0.85f, ry - perpY * 0.85f),
+            end = Offset(rx + perpX * 0.85f, ry + perpY * 0.85f),
+            strokeWidth = 1.6f,
             cap = StrokeCap.Round
         )
     }
 }
 
-// Draw 3D Smooth Snake
+// Draw 3D S-Curved Royal Cobra Snake with forked tongue & gold scales
 private fun DrawScope.draw3DSnake(headPos: Int, tailPos: Int, cellSize: Float) {
     val (hRow, hCol) = SnakesLaddersEngine.cellToRowCol(headPos)
     val (tRow, tCol) = SnakesLaddersEngine.cellToRowCol(tailPos)
@@ -660,46 +741,98 @@ private fun DrawScope.draw3DSnake(headPos: Int, tailPos: Int, cellSize: Float) {
     val tx = tCol * cellSize + cellSize / 2f
     val ty = (9 - tRow) * cellSize + cellSize / 2f
 
-    val midX = (hx + tx) / 2f + (cellSize * 0.35f)
-    val midY = (hy + ty) / 2f - (cellSize * 0.2f)
+    val dx = tx - hx
+    val dy = ty - hy
+    val c1x = hx + dx * 0.33f + cellSize * 0.48f
+    val c1y = hy + dy * 0.33f - cellSize * 0.25f
+    val c2x = hx + dx * 0.68f - cellSize * 0.48f
+    val c2y = hy + dy * 0.68f + cellSize * 0.25f
 
     val path = Path().apply {
         moveTo(hx, hy)
-        quadraticTo(midX, midY, tx, ty)
+        cubicTo(c1x, c1y, c2x, c2y, tx, ty)
     }
 
     // Shadow
     drawPath(
         path = path,
-        color = Color.Black.copy(alpha = 0.35f),
-        style = Stroke(width = 8f, cap = StrokeCap.Round)
+        color = Color.Black.copy(alpha = 0.28f),
+        style = Stroke(width = 10f, cap = StrokeCap.Round)
     )
 
-    // Snake Body with Gradient
+    // Outer Viper Body Outline
     drawPath(
         path = path,
         brush = Brush.linearGradient(
-            listOf(Color(0xFFE11D48), Color(0xFF059669), Color(0xFF10B981))
+            listOf(Color(0xFF9F1239), Color(0xFFE11D48), Color(0xFF047857))
         ),
-        style = Stroke(width = 6.5f, cap = StrokeCap.Round)
+        style = Stroke(width = 8f, cap = StrokeCap.Round)
     )
 
-    // Snake Head (Oval)
+    // Inner Golden Dorsal Stripe
+    drawPath(
+        path = path,
+        brush = Brush.linearGradient(
+            listOf(Color(0xFFFDE68A), Color(0xFFF59E0B), Color(0xFF6EE7B7))
+        ),
+        style = Stroke(width = 2.6f, cap = StrokeCap.Round)
+    )
+
+    // Forked Crimson Tongue
+    val tongueY = hy - cellSize * 0.26f
+    drawLine(
+        color = Color(0xFFEF4444),
+        start = Offset(hx, hy - cellSize * 0.14f),
+        end = Offset(hx, tongueY),
+        strokeWidth = 2f,
+        cap = StrokeCap.Round
+    )
+    drawLine(
+        color = Color(0xFFEF4444),
+        start = Offset(hx, tongueY),
+        end = Offset(hx - cellSize * 0.07f, tongueY - cellSize * 0.08f),
+        strokeWidth = 1.6f,
+        cap = StrokeCap.Round
+    )
+    drawLine(
+        color = Color(0xFFEF4444),
+        start = Offset(hx, tongueY),
+        end = Offset(hx + cellSize * 0.07f, tongueY - cellSize * 0.08f),
+        strokeWidth = 1.6f,
+        cap = StrokeCap.Round
+    )
+
+    // Cobra Head
     drawCircle(
-        color = Color(0xFF9F1239),
-        radius = cellSize * 0.22f,
+        color = Color(0xFF881337),
+        radius = cellSize * 0.23f,
         center = Offset(hx, hy)
     )
-    // Eyes
     drawCircle(
-        color = Color.Yellow,
-        radius = cellSize * 0.06f,
-        center = Offset(hx - cellSize * 0.08f, hy - cellSize * 0.05f)
+        color = Color(0xFFF43F5E),
+        radius = cellSize * 0.17f,
+        center = Offset(hx, hy)
+    )
+    // Glowing Eyes
+    drawCircle(
+        color = Color(0xFFFEF08A),
+        radius = cellSize * 0.058f,
+        center = Offset(hx - cellSize * 0.085f, hy - cellSize * 0.05f)
     )
     drawCircle(
-        color = Color.Yellow,
-        radius = cellSize * 0.06f,
-        center = Offset(hx + cellSize * 0.08f, hy - cellSize * 0.05f)
+        color = Color(0xFFFEF08A),
+        radius = cellSize * 0.058f,
+        center = Offset(hx + cellSize * 0.085f, hy - cellSize * 0.05f)
+    )
+    drawCircle(
+        color = Color.Black,
+        radius = cellSize * 0.025f,
+        center = Offset(hx - cellSize * 0.085f, hy - cellSize * 0.05f)
+    )
+    drawCircle(
+        color = Color.Black,
+        radius = cellSize * 0.025f,
+        center = Offset(hx + cellSize * 0.085f, hy - cellSize * 0.05f)
     )
 }
 

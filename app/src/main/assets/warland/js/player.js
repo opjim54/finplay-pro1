@@ -21,7 +21,7 @@ class PlayerController {
         this.isParachuteOpen = false;
         this.skydiveSpeed = -24.0; // Realistic aerofoil freefall dive m/s
         this.parachuteGlideSpeed = -5.0; // Gentle parachute glide m/s
-        this.position = new THREE.Vector3(-360, 190.0, -360);
+        this.position = new THREE.Vector3(-480, 195.0, -480);
         this.velocity = new THREE.Vector3();
 
         // 360-Degree Character Heading & Camera Orbit
@@ -31,6 +31,8 @@ class PlayerController {
         this.posture = 'STAND';      // 'STAND', 'CROUCH', 'PRONE'
         this.isSprinting = false;
         this.isGrounded = false;
+        this.wasGrounded = false;
+        this.lastAirVelY = 0;
 
         // ── SLIDING SYSTEM ───────────────────────────────────────────────────
         this.isSliding = false;
@@ -130,8 +132,8 @@ class PlayerController {
                     }
                 });
 
-                if (window.animationSystem) {
-                    window.animationSystem.attachToCharacter(bModel, bModel.userData ? bModel.userData.animations : null);
+                if (window.animationSystem && bModel.userData && bModel.userData.hasSkinnedMesh) {
+                    window.animationSystem.attachToCharacter(bModel);
                 }
             }
         }
@@ -229,6 +231,7 @@ class PlayerController {
         localStorage.setItem('warland_skin', charSkin);
 
         if (this.blenderModel) {
+            if (window.animationSystem) window.animationSystem.detachCharacter(this.blenderModel);
             this.mesh.remove(this.blenderModel);
             this.blenderModel = null;
         }
@@ -280,8 +283,8 @@ class PlayerController {
                     }
                 });
 
-                if (window.animationSystem) {
-                    window.animationSystem.attachToCharacter(bModel, bModel.userData ? bModel.userData.animations : null);
+                if (window.animationSystem && bModel.userData && bModel.userData.hasSkinnedMesh) {
+                    window.animationSystem.attachToCharacter(bModel);
                 }
             }
         }
@@ -476,6 +479,28 @@ class PlayerController {
         this.bubbleTexture.needsUpdate = true;
     }
 
+    onReloadStarted(reloadDuration = 1.6) {
+        if (this.hasAnimatedRig()) {
+            window.animationSystem.triggerAction(this.blenderModel, 'RELOAD', null, Math.min(900, reloadDuration * 500));
+        }
+    }
+
+    onThrowGrenade() {
+        if (this.hasAnimatedRig()) {
+            window.animationSystem.triggerAction(this.blenderModel, 'GRENADE_THROW', null, 580);
+        }
+    }
+
+    hasAnimatedRig() {
+        return !!(
+            this.blenderModel &&
+            this.blenderModel.userData &&
+            this.blenderModel.userData.hasSkinnedMesh &&
+            window.animationSystem &&
+            window.animationSystem.isReady
+        );
+    }
+
     takeDamage(amount, isHeadshot = false) {
         if (!this.isAlive) return;
         let actualDamage = isHeadshot ? amount * 1.5 : amount;
@@ -487,11 +512,22 @@ class PlayerController {
         }
 
         this.hp = Math.max(0, this.hp - actualDamage);
+        this.addCameraTrauma(isHeadshot ? 0.35 : 0.16);
         if (window.soundEngine) window.soundEngine.playHitMarker(isHeadshot);
 
         if (this.hp <= 0) {
             this.isAlive = false;
+            if (this.hasAnimatedRig()) {
+                window.animationSystem.triggerAction(
+                    this.blenderModel,
+                    this.posture === 'PRONE' ? 'DEATH_PRONE' : 'DEATH',
+                    null,
+                    2500
+                );
+            }
             if (window.gameEngine) window.gameEngine.onPlayerEliminated();
+        } else if (this.hasAnimatedRig() && actualDamage > 8 && !this.isSliding) {
+            window.animationSystem.triggerAction(this.blenderModel, 'HIT', null, 180);
         }
         if (window.hud) window.hud.updateHealthUi();
     }
@@ -530,14 +566,11 @@ class PlayerController {
 
         if (window.soundEngine) window.soundEngine.playSlide && window.soundEngine.playSlide();
 
-        // Trigger slide animation
-        if (window.animationSystem && this.blenderModel) {
-            window.animationSystem.triggerAction(this.blenderModel, 'SLIDE', () => {
-                // After slide ends, go to slide loop or end
-            });
+        // Trigger slide animation on skinned rig
+        if (this.hasAnimatedRig()) {
+            window.animationSystem.triggerAction(this.blenderModel, 'SLIDE', null, Math.round(this.slideDuration * 950));
         }
 
-        // Update Sprint button visual if present
         const slideBtn = document.getElementById('btnSlide');
         if (slideBtn) slideBtn.classList.add('active');
     }
@@ -666,9 +699,13 @@ class PlayerController {
             }
         }
 
-        // Slide cooldown tick
+        // Slide cooldown tick + visual HUD feedback
         if (this.slideCooldown > 0) {
             this.slideCooldown = Math.max(0, this.slideCooldown - dt);
+        }
+        const slideBtn = document.getElementById('btnSlide');
+        if (slideBtn) {
+            slideBtn.classList.toggle('cooldown', this.slideCooldown > 0 && !this.isSliding);
         }
 
         // Slide timer tick
@@ -736,9 +773,9 @@ class PlayerController {
             return;
         }
 
-        // ── WATER & SWIMMING DETECTION ──────────────────────────────────────
+        // ── WATER & SWIMMING DETECTION (Expanded 520m Island Shoreline) ─────
         const distFromCenter = Math.hypot(this.position.x, this.position.z);
-        const inWater = (distFromCenter > 340 || this.position.y < -0.1) && this.position.y <= 0.25;
+        const inWater = (distFromCenter > 502 || this.position.y < -0.1) && this.position.y <= 0.25;
         if (inWater) {
             this.isSwimming = true;
             this.isGrounded = false;
@@ -747,7 +784,7 @@ class PlayerController {
             if (this.isSkydiving) {
                 this.landOnGround();
             }
-        } else if (distFromCenter <= 335 && this.position.y >= 0.0) {
+        } else if (distFromCenter <= 496 && this.position.y >= 0.0) {
             this.isSwimming = false;
         }
 
@@ -836,55 +873,84 @@ class PlayerController {
 
         if (!this.isSwimming) {
             if (this.position.y <= colResult.groundY) {
+                if (!this.wasGrounded && this.lastAirVelY < -6.5) {
+                    if (window.soundEngine) window.soundEngine.playLandingThud();
+                    if (this.hasAnimatedRig() && !this.isSliding) {
+                        window.animationSystem.triggerAction(this.blenderModel, 'LAND', null, 220);
+                    }
+                }
                 this.position.y = colResult.groundY;
                 this.velocity.y = 0;
                 this.isGrounded = true;
+                this.lastAirVelY = 0;
             } else {
                 this.isGrounded = false;
+                this.lastAirVelY = this.velocity.y;
             }
         }
+        this.wasGrounded = this.isGrounded;
 
-        // Update mesh position and realistic skeletal orientation (NO squashing!)
+        const useRig = this.hasAnimatedRig();
+        const isMovingNow = Math.hypot(this.velocity.x, this.velocity.z) > 0.45;
+        const tAnim = performance.now() * 0.008;
+
+        // Ground-locked mesh transform: NEVER sink GLB feet underground when real Mixamo clips are playing!
         this.mesh.scale.set(1.0, 1.0, 1.0);
         this.mesh.position.copy(this.position);
 
         if (this.isSwimming) {
-            // Horizontal floating breaststroke orientation
-            this.mesh.position.y = -0.32;
-            this.mesh.rotation.set(-1.25, this.characterYaw, 0);
-            this.cameraHeightOffset = 0.82;
+            this.mesh.position.y = useRig ? -0.45 : -0.32;
+            this.mesh.rotation.set(useRig ? 0 : -1.25, this.characterYaw, 0);
+            this.cameraHeightOffset = 0.85;
         } else if (this.isSliding) {
-            // Slide: crouch-height body lean forward
-            this.mesh.position.y = this.position.y - 0.52;
-            this.mesh.rotation.set(0.18, this.characterYaw, 0); // slight forward lean
-            this.cameraHeightOffset = 0.90;
+            if (useRig) {
+                // Mixamo slide clip lowers hips naturally — keep root on ground!
+                this.mesh.position.y = this.position.y;
+                this.mesh.rotation.set(0, this.characterYaw, 0);
+            } else {
+                this.mesh.position.y = this.position.y - 0.46;
+                this.mesh.rotation.set(-0.32, this.characterYaw, 0);
+            }
+            this.cameraHeightOffset = 0.92;
         } else if (this.posture === 'PRONE') {
-            // Lie flat horizontally along ground belly-down!
-            this.mesh.position.y = this.position.y + 0.16;
-            this.mesh.rotation.set(-Math.PI / 2 + 0.08, this.characterYaw, 0);
-            this.cameraHeightOffset = 0.45;
+            if (useRig) {
+                this.mesh.position.y = this.position.y;
+                this.mesh.rotation.set(0, this.characterYaw, 0);
+            } else {
+                this.mesh.position.y = this.position.y + 0.16;
+                this.mesh.rotation.set(-Math.PI / 2 + 0.08, this.characterYaw, 0);
+            }
+            this.cameraHeightOffset = 0.50;
         } else if (this.posture === 'CROUCH') {
-            // Real crouching hip drop
-            this.mesh.position.y = this.position.y - 0.42;
-            this.mesh.rotation.set(0, this.characterYaw, 0);
-            this.cameraHeightOffset = 1.1;
+            if (useRig) {
+                this.mesh.position.y = this.position.y;
+                this.mesh.rotation.set(0, this.characterYaw, 0);
+            } else {
+                this.mesh.scale.set(1.0, 0.78, 1.0);
+                this.mesh.position.y = this.position.y;
+                this.mesh.rotation.set(0.10, this.characterYaw, 0);
+            }
+            this.cameraHeightOffset = 1.12;
         } else {
-            // Natural upright posture
-            this.mesh.rotation.set(0, this.characterYaw, 0);
+            if (!useRig && isMovingNow && this.isGrounded) {
+                // Subtle natural stride bob & lean for static non-rigged user characters (Asian Agent / Sophia)
+                const freq = this.isSprinting ? 2.1 : 1.4;
+                const bob = Math.abs(Math.sin(tAnim * freq)) * (this.isSprinting ? 0.07 : 0.045);
+                const sway = Math.sin(tAnim * freq) * (this.isSprinting ? 0.05 : 0.03);
+                this.mesh.position.y = this.position.y + bob;
+                this.mesh.rotation.set(this.isSprinting ? 0.10 : 0.04, this.characterYaw, sway);
+            } else {
+                this.mesh.rotation.set(0, this.characterYaw, 0);
+            }
             this.cameraHeightOffset = 1.58;
         }
 
-        if (this.mixer) {
-            this.mixer.update(dt);
-        }
-
-        // ── ANIMATION SYSTEM UPDATE (GLB clip-based animation state machine) ──
-        if (window.animationSystem && this.blenderModel && window.animationSystem.isReady) {
+        // ── ANIMATION SYSTEM UPDATE (GLB clip-based state machine vs procedural) ──
+        if (useRig) {
             window.animationSystem.update(dt, this.blenderModel, this, isFiring, isAiming);
-            this.updateWeaponMount(isFiring, isAiming, activeWeapon, moveDir.length() > 0.05);
+            this.updateWeaponMount(isFiring, isAiming, activeWeapon, isMovingNow);
         } else {
-            // Fallback: original procedural skeletal animation if 3D model or clip pack is missing
-            this.animateLimbs(dt, moveDir.length() > 0.05, isFiring, isAiming, activeWeapon);
+            this.animateLimbs(dt, isMovingNow, isFiring, isAiming, activeWeapon);
         }
 
         // Update Camera

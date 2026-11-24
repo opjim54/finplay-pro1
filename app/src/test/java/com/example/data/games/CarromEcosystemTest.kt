@@ -42,11 +42,11 @@ class CarromEcosystemTest {
         assertEquals("ক্যারম বোর্ড 3D", bnStrings.gameTitle(carromId))
         assertEquals("Carrom Board 3D", enStrings.gameTitle(carromId))
 
-        val (bnTitle, bnSections) = bnStrings.rulesFor(carromId)
+        val (bnTitle, bnSections) = bnStrings.ruleTaglineAndSections(carromId)
         assertFalse(bnTitle.isBlank())
         assertTrue(bnSections.isNotEmpty())
 
-        val (enTitle, enSections) = enStrings.rulesFor(carromId)
+        val (enTitle, enSections) = enStrings.ruleTaglineAndSections(carromId)
         assertFalse(enTitle.isBlank())
         assertTrue(enSections.isNotEmpty())
     }
